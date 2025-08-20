@@ -1,4 +1,5 @@
-﻿import 'dart:collection';
+﻿import "package:habits_timer/models/activity.dart";
+import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -166,11 +167,17 @@ class DatabaseService extends ChangeNotifier {
   Future<List<Pause>> getPausesBySession(String sessionId) async =>
       listPausesBySession(sessionId);
   // -- added by patch: update an activity goals/name/color etc.
-  void updateActivity(Activity updated) {
-    // met Ã  jour l'activitÃ© (in-memory)
-    final idx = _activities.indexWhere((a) => a.id == updated.id);
+   else if (_activities is List<Activity>) {
+    final list = _activities as List<Activity>;
+    final idx = list.indexWhere((a) => a.id == updated.id);
     if (idx != -1) {
-      _activities[idx] = updated;
+      list[idx] = updated;
     }
+  }
+}
+  }
+  // updateActivity: met Ã  jour l'activitÃ© en mÃ©moire (Map<String, Activity>)
+  void updateActivity(Activity updated) {
+    _activities[updated.id] = updated;
   }
 }
