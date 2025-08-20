@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
-import '../providers.dart';
-import '../models/activity.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class CreateActivityPage extends StatefulWidget {
+import '../providers.dart';
+
+class CreateActivityPage extends ConsumerStatefulWidget {
   const CreateActivityPage({super.key});
 
   @override
-  State<CreateActivityPage> createState() => _CreateActivityPageState();
+  ConsumerState<CreateActivityPage> createState() => _CreateActivityPageState();
 }
 
-class _CreateActivityPageState extends State<CreateActivityPage> {
+class _CreateActivityPageState extends ConsumerState<CreateActivityPage> {
   final _form = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emojiCtrl = TextEditingController(text: '🏷️');
@@ -58,10 +59,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Objectif journalier (minutes, optionnel)'),
                 keyboardType: TextInputType.number,
-                onChanged: (v) {
-                  final n = int.tryParse(v);
-                  setState(() => _goalDay = n);
-                },
+                onChanged: (v) => setState(() => _goalDay = int.tryParse(v)),
               ),
               const Spacer(),
               FilledButton.icon(
@@ -78,8 +76,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
   Future<void> _onSave() async {
     if (!_form.currentState!.validate()) return;
-    final db = dbProvider.read(context);
-    await db.createActivity(
+    await ref.read(dbProvider).createActivity(
       name: _nameCtrl.text.trim(),
       emoji: _emojiCtrl.text.trim().isEmpty ? '🏷️' : _emojiCtrl.text.trim(),
       color: _color,
@@ -110,8 +107,4 @@ class _ColorDot extends StatelessWidget {
       ),
     );
   }
-}
-
-extension on ProviderBase {
-  T read<T>(BuildContext context) => ProviderScope.containerOf(context, listen: false).read(this as dynamic);
 }
