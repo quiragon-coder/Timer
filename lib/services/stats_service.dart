@@ -1,4 +1,4 @@
-﻿import "package:habits_timer/models/stats.dart";
+import "package:habits_timer/models/stats.dart";
 import "package:habits_timer/services/database_service.dart";
 
 class StatsService {

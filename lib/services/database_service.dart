@@ -1,19 +1,19 @@
-﻿import "package:habits_timer/models/activity.dart";
+// lib/services/database_service.dart
 import 'dart:collection';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
 import '../models/session.dart';
 import '../models/pause.dart';
 
-/// Base de donnÃ©es en mÃ©moire + notifications UI.
+/// Base de données en mémoire + notifications UI.
 class DatabaseService extends ChangeNotifier {
-  final Map<String, Activity> _activities = {};
-  final List<Session> _sessions = [];
-  final List<Pause> _pauses = [];
+  // ------- Storage (in-memory) -------
+  final Map<String, Activity> _activities = <String, Activity>{};
+  final List<Session> _sessions = <Session>[];
+  final List<Pause> _pauses = <Pause>[];
 
-  // ---------- Helpers ----------
+  // ------- Helpers -------
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
   List<Session> _sessionsForActivity(String activityId) =>
@@ -37,7 +37,8 @@ class DatabaseService extends ChangeNotifier {
     }
   }
 
-  // ---------- Activities ----------
+  // ------- Activities -------
+  /// Crée une activité à partir des champs du formulaire.
   Future<Activity> createActivity({
     required String name,
     required String emoji,
@@ -63,18 +64,27 @@ class DatabaseService extends ChangeNotifier {
     return a;
   }
 
+  /// Liste actuelle des activités (utilisée par activitiesProvider).
   Future<List<Activity>> getActivities() async =>
       _activities.values.toList(growable: false);
 
-  // ---------- Sessions (Start / Pause / Resume / Stop) ----------
+  /// Met à jour une activité existante (nom, emoji, couleur, objectifs…)
+  void updateActivity(Activity updated) {
+    _activities[updated.id] = updated;
+    notifyListeners();
+  }
+
+  // ------- Sessions (Start / Pause / Resume / Stop) -------
   Future<void> quickStart(String activityId) async {
-    if (_currentSession(activityId) != null) return; // dÃ©jÃ  en cours
-    _sessions.add(Session(
-      id: _newId(),
-      activityId: activityId,
-      startAt: DateTime.now(),
-      endAt: null,
-    ));
+    if (_currentSession(activityId) != null) return; // déjà en cours
+    _sessions.add(
+      Session(
+        id: _newId(),
+        activityId: activityId,
+        startAt: DateTime.now(),
+        endAt: null,
+      ),
+    );
     notifyListeners();
   }
 
@@ -84,17 +94,21 @@ class DatabaseService extends ChangeNotifier {
 
     final open = _openPause(current.id);
     if (open != null) {
-      // reprise => ferme la pause
-      final i = _pauses.indexWhere((p) => p.id == open.id);
-      if (i >= 0) _pauses[i] = open.copyWith(endAt: DateTime.now());
+      // Reprise: on ferme la pause (objets immuables -> copyWith)
+      final idx = _pauses.indexWhere((p) => p.id == open.id);
+      if (idx >= 0) {
+        _pauses[idx] = open.copyWith(endAt: DateTime.now());
+      }
     } else {
-      // pause => ouvre une nouvelle pause
-      _pauses.add(Pause(
-        id: _newId(),
-        sessionId: current.id,
-        startAt: DateTime.now(),
-        endAt: null,
-      ));
+      // Mise en pause: on ouvre une nouvelle pause
+      _pauses.add(
+        Pause(
+          id: _newId(),
+          sessionId: current.id,
+          startAt: DateTime.now(),
+          endAt: null,
+        ),
+      );
     }
     notifyListeners();
   }
@@ -103,14 +117,16 @@ class DatabaseService extends ChangeNotifier {
     final current = _currentSession(activityId);
     if (current == null) return;
 
-    // ferme pause ouverte si besoin
+    // Ferme une pause ouverte si besoin
     final open = _openPause(current.id);
     if (open != null) {
       final pIdx = _pauses.indexWhere((p) => p.id == open.id);
-      if (pIdx >= 0) _pauses[pIdx] = open.copyWith(endAt: DateTime.now());
+      if (pIdx >= 0) {
+        _pauses[pIdx] = open.copyWith(endAt: DateTime.now());
+      }
     }
 
-    // clÃ´ture la session
+    // Clôture la session (objets immuables -> copyWith)
     final sIdx = _sessions.indexWhere((s) => s.id == current.id);
     if (sIdx >= 0) {
       _sessions[sIdx] = current.copyWith(endAt: DateTime.now());
@@ -118,10 +134,10 @@ class DatabaseService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------- Queries (synchro pour l'UI) ----------
+  // ------- Queries (synchro pour l’UI) -------
   List<Session> listSessionsByActivity(String activityId) {
     final all = _sessionsForActivity(activityId);
-    all.sort((a, b) => b.startAt.compareTo(a.startAt)); // rÃ©centes d'abord
+    all.sort((a, b) => b.startAt.compareTo(a.startAt)); // récentes d’abord
     return UnmodifiableListView(all);
   }
 
@@ -139,11 +155,12 @@ class DatabaseService extends ChangeNotifier {
     return _openPause(s.id) != null;
   }
 
+  /// Temps écoulé pour la session en cours (hors pauses)
   Duration runningElapsed(String activityId) {
     final s = _currentSession(activityId);
     if (s == null) return Duration.zero;
 
-    // si en pause, on ne compte pas le temps depuis le dÃ©but de la pause
+    // si en pause, on ne compte pas le temps depuis le début de la pause
     final pause = _openPause(s.id);
     final end = pause != null ? pause.startAt : DateTime.now();
     return end.difference(s.startAt) - _pausedAccumulated(s.id, until: end);
@@ -151,33 +168,22 @@ class DatabaseService extends ChangeNotifier {
 
   Duration _pausedAccumulated(String sessionId, {DateTime? until}) {
     final pauses = listPausesBySession(sessionId);
-    DateTime limit = until ?? DateTime.now();
+    final limit = until ?? DateTime.now();
     var total = Duration.zero;
+
     for (final p in pauses) {
       final stop = (p.endAt ?? limit).isAfter(limit) ? limit : (p.endAt ?? limit);
-      if (stop.isAfter(p.startAt)) total += stop.difference(p.startAt);
+      if (stop.isAfter(p.startAt)) {
+        total += stop.difference(p.startAt);
+      }
     }
     return total.isNegative ? Duration.zero : total;
   }
 
-  // ---------- Compat (APIs async attendues par StatsService) ----------
+  // ------- Compat (APIs async attendues par StatsService) -------
   Future<List<Session>> getSessionsByActivity(String activityId) async =>
       listSessionsByActivity(activityId);
 
   Future<List<Pause>> getPausesBySession(String sessionId) async =>
       listPausesBySession(sessionId);
-  // -- added by patch: update an activity goals/name/color etc.
-   else if (_activities is List<Activity>) {
-    final list = _activities as List<Activity>;
-    final idx = list.indexWhere((a) => a.id == updated.id);
-    if (idx != -1) {
-      list[idx] = updated;
-    }
-  }
-}
-  }
-  // updateActivity: met Ã  jour l'activitÃ© en mÃ©moire (Map<String, Activity>)
-  void updateActivity(Activity updated) {
-    _activities[updated.id] = updated;
-  }
 }

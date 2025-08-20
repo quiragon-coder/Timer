@@ -1,285 +1,197 @@
-﻿import "dart:async";
-import "package:flutter/material.dart";
-import "package:flutter_riverpod/flutter_riverpod.dart";
-import "package:intl/intl.dart";
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import "../models/activity.dart";
-import "../models/session.dart";
-import "../providers.dart";
-import "../widgets/activity_controls.dart";
-import "../widgets/activity_stats_panel.dart";
+import '../models/activity.dart';
+import '../providers.dart';
+import '../widgets/activity_controls.dart';
+import '../widgets/activity_stats_panel.dart';
 
 class ActivityDetailPage extends ConsumerStatefulWidget {
+  const ActivityDetailPage({
+    super.key,
+    required this.activity,
+  });
+
   final Activity activity;
-  const ActivityDetailPage({super.key, required this.activity});
 
   @override
   ConsumerState<ActivityDetailPage> createState() => _ActivityDetailPageState();
 }
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
+  late Activity _current; // toujours initialisé dans initState
+
   @override
   void initState() {
     super.initState();
-    _current = _current;
+    _current = widget.activity;
+
+    // Écoute les mises à jour de la liste et garde l’activité à jour
+    ref.onAddListener(activitiesProvider, _onActivitiesChanged);
   }
 
-  late Activity _current;
-  final _df = DateFormat("dd MMM HH:mm");
-  Timer? _ticker;
+  void _onActivitiesChanged(AsyncValue<List<Activity>>? prev,
+      AsyncValue<List<Activity>> next) {
+    if (!mounted) return;
+    next.whenData((list) {
+      final found =
+          list.where((a) => a.id == _current.id).cast<Activity?>().firstOrNull;
+      if (found != null && mounted) {
+        setState(() => _current = found);
+      }
+    });
+  }
 
   @override
   void dispose() {
-    _ticker?.cancel();
+    ref.removeListener(activitiesProvider, _onActivitiesChanged);
     super.dispose();
   }
 
-  void _syncTicker(bool running) {
-    final active = _ticker?.isActive ?? false;
-    if (running && !active) {
-      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
-    } else if (!running && active) {
-      _ticker?.cancel();
-      _ticker = null;
-    }
-  }
-
-  Future<void> _openGoalsSheet(Activity a) async {
-    final dailyCtrl  = TextEditingController(text: a.dailyGoalMinutes?.toString()  ?? "");
-    final weeklyCtrl = TextEditingController(text: a.weeklyGoalMinutes?.toString() ?? "");
-    final monthCtrl  = TextEditingController(text: a.monthlyGoalMinutes?.toString()?? "");
-    final yearCtrl   = TextEditingController(text: a.yearlyGoalMinutes?.toString() ?? "");
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-            top: 16, left: 16, right: 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.flag_outlined),
-                  const SizedBox(width: 8),
-                  Text("Objectifs", style: Theme.of(ctx).textTheme.titleLarge),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(ctx, false),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _NumField(label: "Objectif journalier (min)", controller: dailyCtrl),
-              const SizedBox(height: 8),
-              _NumField(label: "Objectif hebdo (min)", controller: weeklyCtrl),
-              const SizedBox(height: 8),
-              _NumField(label: "Objectif mensuel (min)", controller: monthCtrl),
-              const SizedBox(height: 8),
-              _NumField(label: "Objectif annuel (min)", controller: yearCtrl),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.save),
-                  label: const Text("Enregistrer"),
-                  onPressed: () {
-                    Navigator.pop(ctx, true);
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (saved == true) {
-      int? parseOrNull(String s) => s.trim().isEmpty ? null : int.tryParse(s.trim());
-
-      final updated = a.copyWith(
-        dailyGoalMinutes:  parseOrNull(dailyCtrl.text),
-        weeklyGoalMinutes: parseOrNull(weeklyCtrl.text),
-        monthlyGoalMinutes:parseOrNull(monthCtrl.text),
-        yearlyGoalMinutes: parseOrNull(yearCtrl.text),
-      );
-
-      final db = ref.read(dbProvider);
-      // On suppose que DatabaseService expose updateActivity(...)
-      db.updateActivity(updated);
-
-      
-      _current = updated;
-      if (mounted) setState(() {});
-}
+  String _formatElapsed(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
-    final sessions = db.listSessionsByActivity(_current.id);
-
     final running = db.isRunning(_current.id);
     final paused = db.isPaused(_current.id);
-    _syncTicker(running);
-
     final elapsed = db.runningElapsed(_current.id);
-    final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, "0");
-    final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, "0");
-
-    final a = _current; // alias
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("${a.emoji} ${a.name}", overflow: TextOverflow.ellipsis),
+        title: Text('${_current.emoji} ${_current.name}'),
         actions: [
+          // badge temps en cours
           if (running)
             Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: (paused ? Colors.orange : Colors.green).withOpacity(.15),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(paused ? Icons.pause : Icons.timer_outlined, size: 16),
-                      const SizedBox(width: 4),
-                      Text("$mm:$ss"),
-                    ],
-                  ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  '${paused ? '⏸' : '⏱'} ${_formatElapsed(elapsed)}',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
             ),
-          IconButton(
-            tooltip: "Objectifs",
-            icon: const Icon(Icons.flag_outlined),
-            onPressed: () => _openGoalsSheet(a),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Ligne de contrôle
+          Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                backgroundColor: _current.color.withOpacity(0.15),
+                child: Text(_current.emoji, style: const TextStyle(fontSize: 18)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Objectif: ${_current.dailyGoalMinutes ?? 0} min/j',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              ActivityControls(activityId: _current.id, compact: true),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Historique (simple)
+          Text('Historique', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          _buildHistory(context),
+
+          const SizedBox(height: 24),
+
+          // Stats Panel
+          Text('Stats', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: ActivityStatsPanel(activity: _current),
+            ),
           ),
         ],
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
-            Card(
-              elevation: 0,
-              color: Theme.of(context).colorScheme.surface,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(a.emoji, style: const TextStyle(fontSize: 28)),
-                        Container(width: 12, height: 12,
-                          decoration: BoxDecoration(color: a.color, shape: BoxShape.circle)),
-                        Text(
-                          "Objectif: ${a.dailyGoalMinutes ?? 0} min/j",
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    OverflowBar(
-                      alignment: MainAxisAlignment.start,
-                      spacing: 8, overflowSpacing: 8,
-                      children: [
-                        ActivityControls(activityId: a.id, compact: true),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+    );
+  }
 
-            const SizedBox(height: 12),
-            Text("Historique", style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            if (sessions.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text("Aucune session pour le moment."),
-              )
-            else
-              Column(children: [ for (final s in sessions) _SessionTile(df: _df, s: s) ]),
+  Widget _buildHistory(BuildContext context) {
+    final asyncActivities = ref.watch(activitiesProvider);
+    final db = ref.read(dbProvider);
 
-            ActivityStatsPanel(
-              activityId: a.id,
-              dailyGoal: a.dailyGoalMinutes,
-              weeklyGoal: a.weeklyGoalMinutes,
-              monthlyGoal: a.monthlyGoalMinutes,
-              yearlyGoal: a.yearlyGoalMinutes,
-            ),
-          ],
+    // On affiche la session en cours + les 5 dernières (si tu veux)
+    final sessions = db.listSessionsByActivity(_current.id);
+    if (sessions.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Text(
+          "Aucune session pour l'instant.",
+          style: Theme.of(context).textTheme.bodyLarge,
         ),
-      ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final s in sessions)
+          ListTile(
+            leading: Icon(
+              s.endAt == null ? Icons.play_arrow : Icons.check_circle,
+              color: s.endAt == null
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.tertiary,
+            ),
+            title: Text(
+              s.endAt == null
+                  ? 'En cours'
+                  : 'Du ${_fmtDT(s.startAt)} au ${_fmtDT(s.endAt!)}',
+            ),
+            subtitle: Text(
+              s.endAt == null
+                  ? '${_fmtDT(s.startAt)} • en cours'
+                  : 'Durée: ${_fmtDur(s.endAt!.difference(s.startAt))}',
+            ),
+          ),
+      ],
     );
+  }
+
+  String _fmtDT(DateTime d) {
+    final two = (int v) => v.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)} ${two(d.hour)}:${two(d.minute)}';
+    // (si tu veux la locale FR complète, on activera intl + initializeDateFormatting)
+  }
+
+  String _fmtDur(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    if (h > 0) return '${h}h ${m}m';
+    if (m > 0) return '${m}m ${s}s';
+    return '${s}s';
   }
 }
 
-class _SessionTile extends StatelessWidget {
-  final DateFormat df;
-  final Session s;
-  const _SessionTile({required this.df, required this.s});
-
-  @override
-  Widget build(BuildContext context) {
-    final end = s.endAt;
-    final dur = s.duration;
-    final hh = dur.inHours.toString().padLeft(2, "0");
-    final mm = dur.inMinutes.remainder(60).toString().padLeft(2, "0");
-    final ss = dur.inSeconds.remainder(60).toString().padLeft(2, "0");
-
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      leading: Icon(
-        end == null ? Icons.play_circle_fill : Icons.check_circle,
-        color: end == null ? Colors.orange : Colors.green,
-      ),
-      title: Text(
-        end == null ? "En cours" : "Fini ($hh:$mm:$ss)",
-        maxLines: 1, overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        "${df.format(s.startAt)} -> ${end == null ? "en cours" : df.format(end)}",
-        maxLines: 1, overflow: TextOverflow.ellipsis,
-      ),
-    );
+extension<T> on Iterable<T> {
+  T? get firstOrNull {
+    final it = iterator;
+    return it.moveNext() ? it.current : null;
   }
 }
-
-class _NumField extends StatelessWidget {
-  final String label;
-  final TextEditingController controller;
-  const _NumField({required this.label, required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: "ex: 30",
-        border: const OutlineInputBorder(),
-      ),
-    );
-  }
-}
-

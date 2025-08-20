@@ -1,4 +1,4 @@
-﻿import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:habits_timer/models/stats.dart";
 import "package:habits_timer/services/stats_service.dart";
 import "providers.dart";
