@@ -1,11 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../models/activity.dart';
-import '../providers.dart';            // dbProvider
-import '../providers_stats.dart';      // statsTodayProvider, hourlyTodayProvider, week/month/year
+import '../models/session.dart';
+import '../models/pause.dart';
+
+import '../providers.dart';
+import '../providers_stats.dart';
 import '../services/database_service.dart';
+
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
 
@@ -19,24 +24,6 @@ class ActivityDetailPage extends ConsumerStatefulWidget {
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   Timer? _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // À chaque changement DB on invalide les stats clés (aujourd’hui + totaux).
-    // NB: j’enlève ici l’invalidation du provider "last7DaysProvider" qui
-    // n’a pas le même nom partout (évite ton erreur de symbole introuvable).
-    ref.listen<DatabaseService>(dbProvider, (_, __) {
-      final id = widget.activity.id;
-      ref.invalidate(statsTodayProvider(id));
-      ref.invalidate(hourlyTodayProvider(id));
-      ref.invalidate(weekTotalProvider(id));
-      ref.invalidate(monthTotalProvider(id));
-      ref.invalidate(yearTotalProvider(id));
-      if (mounted) setState(() {});
-    });
-  }
 
   @override
   void dispose() {
@@ -59,13 +46,24 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
-    final a  = widget.activity;
+    final a = widget.activity;
+    final id = a.id;
 
-    final running = db.isRunning(a.id);
-    final paused  = db.isPaused(a.id);
+    // Invalide les providers de stats à chaque changement DB
+    ref.listen<DatabaseService>(dbProvider, (prev, next) {
+      ref.invalidate(statsTodayProvider(id));
+      ref.invalidate(hourlyTodayProvider(id));
+      ref.invalidate(weekTotalProvider(id));
+      ref.invalidate(monthTotalProvider(id));
+      ref.invalidate(yearTotalProvider(id));
+      if (mounted) setState(() {});
+    });
+
+    final running = db.isRunning(id);
+    final paused = db.isPaused(id);
     _syncTicker(running);
 
-    final elapsed = db.runningElapsed(a.id);
+    final elapsed = db.runningElapsed(id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
@@ -105,6 +103,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // En-tête + boutons
           Row(
             children: [
               Container(
@@ -116,21 +115,79 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
             ],
           ),
           const SizedBox(height: 12),
+          ActivityControls(activityId: id),
 
-          Wrap(
-            spacing: 12, runSpacing: 12,
-            children: [
-              ActivityControls(activityId: a.id),
-            ],
-          ),
+          // =====================  HISTORIQUE  =====================
+          const SizedBox(height: 20),
+          Text('Historique', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          _buildHistory(context, db, id),
 
+          // ========================  STATS  =======================
           const SizedBox(height: 24),
-          Divider(color: Theme.of(context).dividerColor.withOpacity(.4)),
-          const SizedBox(height: 12),
-
-          ActivityStatsPanel(activityId: a.id),
+          Text('Stats', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          ActivityStatsPanel(activityId: id),
         ],
       ),
+    );
+  }
+
+  // ---- Historique (sessions finies + session en cours) ----
+  Widget _buildHistory(
+      BuildContext context, DatabaseService db, String activityId) {
+    final df = DateFormat('dd/MM HH:mm');
+    final List<Session> sessions = db.sessionsByActivity(activityId);
+
+    final running = db.isRunning(activityId);
+    final List<Widget> tiles = [];
+
+    // En cours
+    if (running) {
+      final start = db.currentSessionStart(activityId);
+      tiles.add(
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.play_arrow),
+          title: const Text('En cours'),
+          subtitle: Text(
+              '${df.format(start)} • en cours'), // pas de durée pour en cours
+        ),
+      );
+    }
+
+    if (sessions.isEmpty && tiles.isEmpty) {
+      return Text(
+        "Aucun historique",
+        style: Theme.of(context).textTheme.bodyMedium,
+      );
+    }
+
+    // Sessions terminées
+    for (final s in sessions) {
+      final String range = '${df.format(s.startAt)} au ${df.format(s.endAt!)}';
+      final Duration d = s.endAt!.difference(s.startAt);
+      final int secs = d.inSeconds;
+      final String dur =
+      secs < 60 ? '${secs}s' : '${d.inMinutes}m ${secs.remainder(60)}s';
+      tiles.add(
+        Column(
+          children: [
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.check_circle_outline),
+              title: Text(range),
+              subtitle: Text('Durée: $dur'),
+            ),
+            const Divider(height: 1),
+          ],
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: Column(children: tiles),
     );
   }
 }

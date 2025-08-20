@@ -11,147 +11,106 @@ class ActivityStatsPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final today = ref.watch(statsTodayProvider(activityId));
+    final week  = ref.watch(weekTotalProvider(activityId));
+    final month = ref.watch(monthTotalProvider(activityId));
+    final year  = ref.watch(yearTotalProvider(activityId));
 
-    // Providers de stats
-    final todayAsync  = ref.watch(statsTodayProvider(activityId));
-    final weekAsync   = ref.watch(weekTotalProvider(activityId));
-    final monthAsync  = ref.watch(monthTotalProvider(activityId));
-    final yearAsync   = ref.watch(yearTotalProvider(activityId));
-    final hourlyAsync = ref.watch(hourlyTodayProvider(activityId));
-    // 👇 NOTE: nom conforme à ton projet
-    final last7Async  = ref.watch(statsLast7DaysProvider(activityId));
+    final hourly = ref.watch(hourlyTodayProvider(activityId));
+    final last7  = ref.watch(last7DaysProvider(activityId));
 
-    return Card(
-      color: scheme.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: scheme.outline.withOpacity(.20)),
+    final theme = Theme.of(context);
+    final cardColor = theme.colorScheme.surfaceContainerHighest;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Stats', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Chips des totaux
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _TotalChip(icon: Icons.calendar_today,  label: "Aujourd'hui", value: today),
+              _TotalChip(icon: Icons.calendar_view_week, label: "Semaine",  value: week),
+              _TotalChip(icon: Icons.calendar_view_month, label: "Mois",     value: month),
+              _TotalChip(icon: Icons.calendar_month,     label: "Année",   value: year),
+            ],
+          ),
 
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _StatChip(icon: Icons.calendar_today,     label: "Aujourd'hui", async: todayAsync),
-                _StatChip(icon: Icons.calendar_view_week,  label: 'Semaine',     async: weekAsync),
-                _StatChip(icon: Icons.calendar_view_month, label: 'Mois',        async: monthAsync),
-                _StatChip(icon: Icons.calendar_month,      label: 'Ann\u00E9e',  async: yearAsync),
-              ],
+          const SizedBox(height: 16),
+          Divider(color: theme.dividerColor.withOpacity(.5)),
+          const SizedBox(height: 12),
+
+          Text("Répartition horaire (aujourd'hui)",
+              style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 220,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: hourly.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, __) => const Center(child: Text('Erreur')),
+                data: (buckets) => HourlyBarsChart(buckets: buckets),
+              ),
             ),
+          ),
 
-            const SizedBox(height: 12),
-            const Divider(),
-            const SizedBox(height: 8),
+          const SizedBox(height: 16),
+          Divider(color: theme.dividerColor.withOpacity(.5)),
+          const SizedBox(height: 12),
 
-            Text("R\u00E9partition horaire (aujourd'hui)",
-                style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 8),
-
-            // Hourly chart -> paramètre attendu: buckets:
-            hourlyAsync.when(
-              loading: () => const _ChartPlaceholder(label: 'Chargement...'),
-              error: (e, _) => _ChartError(e.toString()),
-              data: (buckets) =>
-              buckets.isEmpty ? const _ChartPlaceholder()
-                  : HourlyBarsChart(buckets: buckets),
+          Text("7 derniers jours", style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 200,
+            child: last7.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => const Center(child: Text('Erreur')),
+              data: (stats) => WeeklyBarsChart(stats: stats),
             ),
-
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-
-            Text('7 derniers jours', style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 8),
-
-            // Weekly chart -> paramètre attendu: stats:
-            last7Async.when(
-              loading: () => const _ChartPlaceholder(label: 'Chargement...'),
-              error: (e, _) => _ChartError(e.toString()),
-              data: (days) =>
-              days.isEmpty ? const _ChartPlaceholder()
-                  : WeeklyBarsChart(stats: days),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _StatChip extends StatelessWidget {
+class _TotalChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  final AsyncValue<int> async;
+  final AsyncValue<int> value;
 
-  const _StatChip({
+  const _TotalChip({
     required this.icon,
     required this.label,
-    required this.async,
+    required this.value,
   });
 
   @override
   Widget build(BuildContext context) {
-    return async.when(
-      loading: () => const Chip(
-        avatar: Icon(Icons.hourglass_empty, size: 16),
-        label: Text('...'),
+    final theme = Theme.of(context);
+    return value.when(
+      loading: () => Chip(
+        avatar: Icon(icon, size: 16),
+        label: const Text('...'),
       ),
-      error: (e, _) => const Chip(
-        avatar: Icon(Icons.error_outline, size: 16),
-        label: Text('Err'),
+      error: (_, __) => Chip(
+        avatar: Icon(icon, size: 16),
+        label: const Text('Err'),
       ),
       data: (m) => Chip(
         avatar: Icon(icon, size: 16),
         label: Text('$label: $m min'),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
       ),
-    );
-  }
-}
-
-class _ChartPlaceholder extends StatelessWidget {
-  final String label;
-  const _ChartPlaceholder({this.label = 'Aucune donn\u00E9e'});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 160,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withOpacity(.25),
-        ),
-      ),
-      child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-    );
-  }
-}
-
-class _ChartError extends StatelessWidget {
-  final String message;
-  const _ChartError(this.message);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 160,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).colorScheme.error),
-      ),
-      child: Text('Erreur: $message',
-          style: Theme.of(context).textTheme.bodyMedium),
     );
   }
 }
