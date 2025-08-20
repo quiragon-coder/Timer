@@ -1,10 +1,9 @@
-// lib/widgets/activity_controls.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 
-/// Boutons Start / Pause-Reprendre / Stop.
+/// Boutons Start / Pause↔Reprendre / Stop.
 /// - compact:true  -> icônes seules (liste)
 /// - compact:false -> boutons avec libellés (page détail)
 class ActivityControls extends ConsumerStatefulWidget {
@@ -24,15 +23,15 @@ class ActivityControls extends ConsumerStatefulWidget {
 class _ActivityControlsState extends ConsumerState<ActivityControls> {
   Future<void> _start() async {
     final db = ref.read(dbProvider);
-    await db.start(widget.activityId); // <- remplace quickStart
+    await db.start(widget.activityId);      // ← noms standard
     if (!mounted) return;
-    setState(() {}); // petite MAJ locale
+    setState(() {});                        // petite MAJ locale
   }
 
   Future<void> _togglePause() async {
     final db = ref.read(dbProvider);
     if (!db.isRunning(widget.activityId)) return;
-    await db.togglePause(widget.activityId); // <- remplace quickTogglePause
+    await db.togglePause(widget.activityId); // ← noms standard
     if (!mounted) return;
     setState(() {});
   }
@@ -40,7 +39,7 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
   Future<void> _stop() async {
     final db = ref.read(dbProvider);
     if (!db.isRunning(widget.activityId)) return;
-    await db.stop(widget.activityId); // <- remplace quickStop
+    await db.stop(widget.activityId);       // ← noms standard
     if (!mounted) return;
     setState(() {});
   }
@@ -52,7 +51,7 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
     final paused  = running && db.isPaused(widget.activityId);
 
     if (!widget.compact) {
-      // Version “riche” (page détail) — Wrap pour le responsive
+      // Version “riche” (page détail) — Wrap = responsive
       return Wrap(
         spacing: 12,
         runSpacing: 8,
