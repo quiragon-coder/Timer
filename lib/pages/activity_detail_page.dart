@@ -1,3 +1,4 @@
+﻿import '../widgets/activity_stats_panel.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -66,7 +67,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                     color: (paused ? Colors.orange : Colors.green).withOpacity(.15),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Text(paused ? '⏸ $mm:$ss' : '⏱ $mm:$ss'),
+                  child: Text(paused ? 'â¸ $mm:$ss' : 'â± $mm:$ss'),
                 ),
               ),
             ),
@@ -160,10 +161,11 @@ class _SessionTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${df.format(s.startAt)} → ${end == null ? 'en cours' : df.format(end)}',
+        '${df.format(s.startAt)} â†’ ${end == null ? 'en cours' : df.format(end)}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
     );
   }
 }
+

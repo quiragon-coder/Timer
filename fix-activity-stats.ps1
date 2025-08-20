@@ -1,4 +1,23 @@
-﻿import 'package:flutter/material.dart';
+# fix-activity-stats.ps1
+param(
+  [string]$Message = "chore: fix ActivityStatsPanel duplicates"
+)
+
+$ErrorActionPreference = "Stop"
+Set-Location -Path $PSScriptRoot
+
+function Step($t){ Write-Host "`n==> $t" -ForegroundColor Cyan }
+function Ok($t){ Write-Host "OK: $t" -ForegroundColor Green }
+function Warn($t){ Write-Host "WARN: $t" -ForegroundColor Yellow }
+
+# 1) Ecrire le fichier canonique
+Step "Write canonical: lib/widgets/activity_stats_panel.dart"
+$widgetDir = "lib/widgets"
+if (-not (Test-Path $widgetDir)) { New-Item -ItemType Directory -Path $widgetDir | Out-Null }
+
+$panelPath = Join-Path $widgetDir "activity_stats_panel.dart"
+$panelContent = @'
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers_stats.dart';
@@ -139,4 +158,75 @@ class _Skeleton extends StatelessWidget {
       ),
     );
   }
+}
+'@
+
+Set-Content -Path $panelPath -Value $panelContent -Encoding UTF8
+Ok "Wrote: $panelPath"
+
+# 2) Trouver toutes les autres definitions et les sauvegarder .bak
+Step "Scan for duplicates of 'class ActivityStatsPanel'"
+$matches = Get-ChildItem -Path . -Recurse -Include *.dart |
+  Select-String -Pattern 'class\s+ActivityStatsPanel\b' |
+  Select-Object -ExpandProperty Path -Unique
+
+$canonical = (Resolve-Path $panelPath).ToString()
+$duplicates = @()
+foreach ($p in $matches) {
+  $rp = (Resolve-Path $p).ToString()
+  if ($rp -ne $canonical) { $duplicates += $rp }
+}
+
+if ($duplicates.Count -gt 0) {
+  Warn "Duplicates found:"
+  $duplicates | ForEach-Object { Write-Host " - $_" -ForegroundColor Yellow }
+  foreach ($dup in $duplicates) {
+    $bak = "$dup.bak"
+    Move-Item -Force $dup $bak
+    Ok "Renamed to backup: $bak"
+  }
+} else {
+  Ok "No duplicates."
+}
+
+# 3) S'assurer de l'import dans activity_detail_page.dart
+Step "Ensure import in lib/pages/activity_detail_page.dart"
+$detailPath = "lib/pages/activity_detail_page.dart"
+if (Test-Path $detailPath) {
+  $content = Get-Content $detailPath -Raw
+  if ($content -notmatch "widgets/activity_stats_panel.dart") {
+    $content = "import '../widgets/activity_stats_panel.dart';`r`n" + $content
+    Set-Content -Path $detailPath -Value $content -Encoding UTF8
+    Ok "Import inserted at top of activity_detail_page.dart"
+  } else {
+    Ok "Import already present."
+  }
+} else {
+  Warn "$detailPath not found (skipped)."
+}
+
+# 4) Flutter clean/get/analyze
+Step "Flutter clean"
+flutter clean
+
+Step "Flutter pub get"
+flutter pub get
+
+Step "Flutter analyze"
+flutter analyze
+
+# 5) Git add/commit/push si repo present
+if (Test-Path ".git") {
+  Step "Git add/commit/push"
+  git add -A
+  git commit -m "$Message" 2>$null | Out-Null
+  try { git pull --rebase } catch {}
+  try {
+    git push
+    Ok "Pushed to GitHub"
+  } catch {
+    Warn "Push failed (no remote or no auth?)"
+  }
+} else {
+  Warn "No .git directory - skipping commit/push."
 }
