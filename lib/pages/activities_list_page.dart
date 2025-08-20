@@ -23,7 +23,7 @@ class ActivitiesListPage extends ConsumerWidget {
         error: (e, _) => Center(child: Text("Erreur: $e")),
         data: (list) {
           if (list.isEmpty) {
-            return const Center(child: Text("Aucune activitÃ©. Ajoute-en une âž•"));
+            return const Center(child: Text("Aucune activit\u00e9. Ajoute-en une \u2192
           }
           return ListView.separated(
             padding: const EdgeInsets.all(12),
@@ -147,7 +147,7 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
 
           const SizedBox(height: 6),
 
-          // Ligne 2: chips Semaine / Mois / AnnÃ©e (verts si atteint)
+          // Ligne 2: chips Semaine / Mois / AnnÃƒÂ©e (verts si atteint)
           Wrap(
             spacing: 8, runSpacing: 8,
             children: [
@@ -204,3 +204,4 @@ class _GoalChip extends StatelessWidget {
     );
   }
 }
+
