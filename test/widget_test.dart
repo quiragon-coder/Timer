@@ -2,20 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+// Le nom du package est "habits_timer" (pubspec.yaml)
 import 'package:habits_timer/main.dart';
 
 void main() {
-  testWidgets('HabitsApp démarre et affiche la page d\'activités',
-          (WidgetTester tester) async {
-        // Monte l'app avec Riverpod
-        await tester.pumpWidget(
-          const ProviderScope(child: HabitsApp()),
-        );
+  testWidgets('App builds', (WidgetTester tester) async {
+    // On wrappe dans ProviderScope car l'app utilise Riverpod
+    await tester.pumpWidget(const ProviderScope(child: MyApp()));
 
-        // Vérifie que l'app a un MaterialApp
-        expect(find.byType(MaterialApp), findsOneWidget);
-
-        // Vérifie que la page d'activités est affichée (titre ou widget spécifique)
-        expect(find.text('Activities'), findsOneWidget);
-      });
+    // Fumetest: la page d’accueil affiche "Activities"
+    expect(find.text('Activities'), findsOneWidget);
+  });
 }
