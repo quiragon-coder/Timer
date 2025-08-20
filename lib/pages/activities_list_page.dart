@@ -77,7 +77,6 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
     final db = ref.watch(dbProvider);
     final running = db.isRunning(widget.a.id);
     final paused = db.isPaused(widget.a.id);
-    // (ré)arme/arrête le ticker quand l’état change
     _syncTicker(running);
 
     final elapsed = db.runningElapsed(widget.a.id);
@@ -88,7 +87,6 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       leading: Text(widget.a.emoji, style: const TextStyle(fontSize: 24)),
       title: Text(widget.a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      // pas de trailing => plus d’espace central
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -114,7 +112,14 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
                     color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Text(paused ? '⏸ $mm:$ss' : '⏱ $mm:$ss'),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
+                      const SizedBox(width: 4),
+                      Text('$mm:$ss'),
+                    ],
+                  ),
                 ),
             ],
           ),

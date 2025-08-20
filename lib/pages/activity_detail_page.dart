@@ -67,7 +67,14 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                     color: (paused ? Colors.orange : Colors.green).withOpacity(.15),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Text(paused ? 'â¸ $mm:$ss' : 'â± $mm:$ss'),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(paused ? Icons.pause : Icons.timer_outlined, size: 16),
+                      const SizedBox(width: 4),
+                      Text('$mm:$ss'),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -169,7 +176,8 @@ class _SessionTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${df.format(s.startAt)} â†’ ${end == null ? 'en cours' : df.format(end)}',
+        // Flèche ASCII pour éviter l’UTF-8 exotique
+        '${df.format(s.startAt)} -> ${end == null ? 'en cours' : df.format(end)}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
