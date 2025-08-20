@@ -6,25 +6,21 @@ import '../models/activity.dart';
 import '../models/session.dart';
 import '../providers.dart';
 import '../widgets/activity_controls.dart';
-import '../widgets/activity_stats_panel.dart';
 
-class ActivityDetailPage extends ConsumerStatefulWidget {
+class ActivityDetailPage extends ConsumerWidget {
   final Activity activity;
-  const ActivityDetailPage({super.key, required this.activity});
+  ActivityDetailPage({super.key, required this.activity});
 
-  @override
-  ConsumerState<ActivityDetailPage> createState() => _ActivityDetailPageState();
-}
-
-class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   final _df = DateFormat('dd MMM HH:mm');
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // watch -> rebuild quand le service notifie
+    final db = ref.watch(dbProvider);
+    final sessions = db.listSessionsByActivity(activity.id);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('${widget.activity.emoji} ${widget.activity.name}'),
-      ),
+      appBar: AppBar(title: Text('${activity.emoji} ${activity.name}')),
       body: Padding(
         padding: const EdgeInsets.all(12),
         child: ListView(
@@ -32,17 +28,13 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
             Row(
               children: [
                 Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: widget.activity.color,
-                    shape: BoxShape.circle,
-                  ),
+                  width: 16, height: 16,
+                  decoration: BoxDecoration(color: activity.color, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 8),
-                Text('Objectif jour: ${widget.activity.dailyGoalMinutes ?? 0} min'),
+                Text('Objectif jour: ${activity.dailyGoalMinutes ?? 0} min'),
                 const Spacer(),
-                ActivityControls(activityId: widget.activity.id),
+                ActivityControls(activityId: activity.id),
               ],
             ),
             const SizedBox(height: 16),
@@ -50,32 +42,17 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
             const SizedBox(height: 8),
             Text('Historique', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            FutureBuilder<List<Session>>(
-              future: ref.read(dbProvider).getSessionsByActivity(widget.activity.id),
-              builder: (context, snap) {
-                if (!snap.hasData) {
-                  if (snap.hasError) return Text('Erreur: ${snap.error}');
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                final sessions = snap.data!;
-                if (sessions.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Text('Aucune session pour le moment.'),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final s in sessions) _SessionTile(df: _df, s: s),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            ActivityStatsPanel(activity: widget.activity),
+            if (sessions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text('Aucune session pour le moment.'),
+              )
+            else
+              Column(
+                children: [
+                  for (final s in sessions) _SessionTile(df: _df, s: s),
+                ],
+              ),
           ],
         ),
       ),
@@ -91,8 +68,7 @@ class _SessionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final end = s.endAt;
-    final dur = s.duration;
-    final mm = dur.inMinutes.toString();
+    final mm = s.duration.inMinutes.toString();
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(

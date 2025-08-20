@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../providers.dart';
 
 class ActivityControls extends ConsumerStatefulWidget {
@@ -16,22 +15,24 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
 
   @override
   Widget build(BuildContext context) {
+    final running = ref.watch(dbProvider).isRunning(widget.activityId);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          tooltip: 'Start',
-          onPressed: _busy ? null : () => _run(() => ref.read(dbProvider).quickStart(widget.activityId)),
+          tooltip: running ? 'Déjà en cours' : 'Start',
+          onPressed: _busy || running ? null : () => _run(() => ref.read(dbProvider).quickStart(widget.activityId)),
           icon: const Icon(Icons.play_arrow),
         ),
         IconButton(
-          tooltip: 'Pause/Unpause',
-          onPressed: _busy ? null : () => _run(() => ref.read(dbProvider).quickTogglePause(widget.activityId)),
+          tooltip: 'Pause / Reprendre',
+          onPressed: _busy || !running ? null : () => _run(() => ref.read(dbProvider).quickTogglePause(widget.activityId)),
           icon: const Icon(Icons.pause),
         ),
         IconButton(
           tooltip: 'Stop',
-          onPressed: _busy ? null : () => _run(() => ref.read(dbProvider).quickStop(widget.activityId)),
+          onPressed: _busy || !running ? null : () => _run(() => ref.read(dbProvider).quickStop(widget.activityId)),
           icon: const Icon(Icons.stop),
         ),
       ],
@@ -40,6 +41,10 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
 
   Future<void> _run(Future Function() action) async {
     setState(() => _busy = true);
-    try { await action(); } finally { if (mounted) setState(() => _busy = false); }
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
