@@ -17,9 +17,8 @@ class StatsService {
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
 
-    final buckets = List.generate(24, (i) => HourlyBucket(hour: i, minutes: 0));
+    final buckets = List.generate(24, (i) => HourlyBucket(i, 0));
     final sessions = db.listSessionsByActivity(activityId);
-
     for (final s in sessions) {
       final sStart = s.startAt;
       final sEnd = s.endAt ?? DateTime.now();
@@ -37,19 +36,16 @@ class StatsService {
           effective -= ppEnd.difference(ppStart).inMinutes;
         }
       }
-      if (effective <= 0) continue;
 
       // RÃ©partir par heure
       var cursor = ovStart;
       var remain = effective;
       while (remain > 0 && cursor.isBefore(ovEnd)) {
-        final bucketHourStart = DateTime(cursor.year, cursor.month, cursor.day, cursor.hour);
-        final bucketHourEnd = bucketHourStart.add(const Duration(hours: 1));
+        final bucketHourEnd = DateTime(cursor.year, cursor.month, cursor.day, cursor.hour).add(const Duration(hours: 1));
         final splitEnd = bucketHourEnd.isBefore(ovEnd) ? bucketHourEnd : ovEnd;
         final mins = splitEnd.difference(cursor).inMinutes;
         if (mins > 0) {
-          final h = cursor.hour;
-          buckets[h] = HourlyBucket(hour: h, minutes: buckets[h].minutes + mins);
+          buckets[cursor.hour] = HourlyBucket(cursor.hour, buckets[cursor.hour].minutes + mins);
           remain -= mins;
         }
         cursor = splitEnd;
@@ -66,14 +62,15 @@ class StatsService {
       final dStart = DateTime(start.year, start.month, start.day).add(Duration(days: i));
       final dEnd = dStart.add(const Duration(days: 1));
       final m = await _minutesInRange(activityId, dStart, dEnd);
-      days.add(DailyStat(day: dStart, minutes: m));
+      days.add(DailyStat(dStart, m));
     }
     return days;
   }
 
   Future<int> minutesThisWeek(String activityId) async {
     final now = DateTime.now();
-    final dow = now.weekday; // 1..7 (Mon..Sun)
+    // Semaine Lundi->Dimanche
+    final dow = now.weekday; // 1..7
     final start = DateTime(now.year, now.month, now.day).subtract(Duration(days: dow - 1));
     final end = start.add(const Duration(days: 7));
     return _minutesInRange(activityId, start, end);
@@ -82,9 +79,7 @@ class StatsService {
   Future<int> minutesThisMonth(String activityId) async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, 1);
-    final end = (now.month == 12)
-        ? DateTime(now.year + 1, 1, 1)
-        : DateTime(now.year, now.month + 1, 1);
+    final end = (now.month == 12) ? DateTime(now.year + 1, 1, 1) : DateTime(now.year, now.month + 1, 1);
     return _minutesInRange(activityId, start, end);
   }
 
@@ -102,7 +97,6 @@ class StatsService {
     for (final s in sessions) {
       final sStart = s.startAt;
       final sEnd = s.endAt ?? DateTime.now();
-
       final ovStart = sStart.isAfter(start) ? sStart : start;
       final ovEnd = sEnd.isBefore(end) ? sEnd : end;
       if (!ovEnd.isAfter(ovStart)) continue;

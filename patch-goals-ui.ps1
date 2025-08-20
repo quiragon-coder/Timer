@@ -1,4 +1,21 @@
-﻿import "package:habits_timer/models/stats.dart";
+# patch-goals-ui.ps1
+$ErrorActionPreference = "Stop"
+Set-Location -Path $PSScriptRoot
+
+function Step($t){ Write-Host "`n==> $t" -ForegroundColor Cyan }
+function Ok($t){ Write-Host "OK: $t" -ForegroundColor Green }
+
+function Write-File($path, $content) {
+  $dir = Split-Path $path -Parent
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+  if (Test-Path $path) { Copy-Item -Force $path "$path.bak" }
+  Set-Content -Path $path -Value $content -Encoding UTF8
+  Ok "Wrote: $path"
+}
+
+# ----- stats_service.dart (utilise des paramètres NOMMÉS) -----
+$statsService = @'
+import "package:habits_timer/models/stats.dart";
 import "package:habits_timer/services/database_service.dart";
 
 class StatsService {
@@ -39,7 +56,7 @@ class StatsService {
       }
       if (effective <= 0) continue;
 
-      // RÃ©partir par heure
+      // Répartir par heure
       var cursor = ovStart;
       while (cursor.isBefore(ovEnd)) {
         final bucketHourStart = DateTime(cursor.year, cursor.month, cursor.day, cursor.hour);
@@ -116,3 +133,58 @@ class StatsService {
     return total;
   }
 }
+'@
+
+# ----- providers_stats.dart (retire l'import db non utilisé) -----
+$providersStats = @'
+import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:habits_timer/models/stats.dart";
+import "package:habits_timer/services/stats_service.dart";
+import "providers.dart";
+
+final statsServiceProvider = Provider<StatsService>((ref) {
+  final db = ref.read(dbProvider);
+  return StatsService(db);
+});
+
+final statsTodayProvider = FutureProvider.family<int, String>((ref, activityId) async {
+  final svc = ref.read(statsServiceProvider);
+  return svc.minutesToday(activityId);
+});
+
+final hourlyTodayProvider = FutureProvider.family<List<HourlyBucket>, String>((ref, activityId) async {
+  final svc = ref.read(statsServiceProvider);
+  return svc.hourlyToday(activityId);
+});
+
+final statsLast7DaysProvider = FutureProvider.family<List<DailyStat>, String>((ref, activityId) async {
+  final svc = ref.read(statsServiceProvider);
+  return svc.last7DaysStats(activityId);
+});
+
+final weekTotalProvider = FutureProvider.family<int, String>((ref, activityId) async {
+  final svc = ref.read(statsServiceProvider);
+  return svc.minutesThisWeek(activityId);
+});
+
+final monthTotalProvider = FutureProvider.family<int, String>((ref, activityId) async {
+  final svc = ref.read(statsServiceProvider);
+  return svc.minutesThisMonth(activityId);
+});
+
+final yearTotalProvider = FutureProvider.family<int, String>((ref, activityId) async {
+  final svc = ref.read(statsServiceProvider);
+  return svc.minutesThisYear(activityId);
+});
+'@
+
+Step "Patch files"
+Write-File "lib/services/stats_service.dart" $statsService
+Write-File "lib/providers_stats.dart"       $providersStats
+
+Step "Flutter clean"
+flutter clean
+Step "Flutter pub get"
+flutter pub get
+Step "Flutter analyze"
+flutter analyze
