@@ -61,6 +61,12 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
   }
 
   @override
+  void didUpdateWidget(covariant _ActivityTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _armTicker();
+  }
+
+  @override
   void dispose() {
     _ticker?.cancel();
     super.dispose();
@@ -85,24 +91,36 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
     return ListTile(
+      isThreeLine: true, // un peu plus de place en hauteur
       leading: Text(widget.a.emoji, style: const TextStyle(fontSize: 24)),
       title: Text(widget.a.name),
-      subtitle: Row(
-        children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle)),
-          const SizedBox(width: 8),
-          Text('Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j'),
-          const SizedBox(width: 8),
-          if (running)
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
-                color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
-                borderRadius: BorderRadius.circular(999),
+                color: widget.a.color,
+                shape: BoxShape.circle,
               ),
-              child: Text(paused ? '⏸ $mm:$ss' : '⏱ $mm:$ss'),
             ),
-        ],
+            Text('Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j'),
+            if (running)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(paused ? '⏸ $mm:$ss' : '⏱ $mm:$ss'),
+              ),
+          ],
+        ),
       ),
       trailing: ActivityControls(activityId: widget.a.id),
       onTap: () => Navigator.of(context).push(
