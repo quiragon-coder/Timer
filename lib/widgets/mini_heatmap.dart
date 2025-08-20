@@ -56,10 +56,11 @@ class _MiniHeatmapState extends ConsumerState<MiniHeatmap> {
   Widget build(BuildContext context) {
     final stats = ref.read(statsServiceProvider);
 
-    // On laisse la durée par défaut de StatsService (ton implémentation),
-    // car lastNDays() attend 1 paramètre positionnel: activityId.
+    // IMPORTANT: ta méthode lastNDays attend (activityId, n: ...).
+    final int days = (widget.weeks * 7).clamp(7, 365);
+
     return FutureBuilder<List<DailyStat>>(
-      future: stats.lastNDays(widget.activityId),
+      future: stats.lastNDays(widget.activityId, n: days),
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const SizedBox(

@@ -24,8 +24,8 @@ class ActivityHeatmapPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Heatmap annuelle')),
       body: FutureBuilder<List<DailyStat>>(
-        // IMPORTANT: dans ton projet, lastNDays attend 1 paramètre positionnel.
-        future: stats.lastNDays(activityId),
+        // IMPORTANT: ta méthode lastNDays attend (activityId, n: ...).
+        future: stats.lastNDays(activityId, n: 365),
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
@@ -39,7 +39,7 @@ class ActivityHeatmapPage extends ConsumerWidget {
             for (final d in data) DateUtils.dateOnly(d.day): d.minutes,
           };
 
-          // On affiche les 365 derniers jours (ou la taille de 'data' si plus courte)
+          // On affiche jusqu'à 365 jours (ou la taille des données si plus courte)
           final totalDays = math.min(365, byDay.length.clamp(1, 365));
           final today = DateUtils.dateOnly(DateTime.now());
           final start = today.subtract(Duration(days: totalDays - 1));
