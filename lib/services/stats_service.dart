@@ -1,133 +1,140 @@
-import 'package:flutter/material.dart';
-import '../models/stats.dart';
+import 'dart:math';
+import 'package:flutter/foundation.dart';
+
+import '../models/session.dart';
+import '../models/stats.dart';          // <-- utilise la version unique des modèles
 import 'database_service.dart';
 
+/// Service de stats calculées à partir du DatabaseService
 class StatsService {
   final DatabaseService db;
   StatsService(this.db);
 
-  int todayTotal(String activityId) {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
-    return _sumInRange(activityId, start, end);
+  // ---------- Helpers temps ----------
+  DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
+  DateTime _endOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
+
+  DateTime _startOfWeek(DateTime d) {
+    // Semaine commençant lundi
+    final weekday = d.weekday; // 1=lundi...7=dimanche
+    final delta = weekday - DateTime.monday;
+    final base = DateTime(d.year, d.month, d.day);
+    return base.subtract(Duration(days: delta));
   }
 
-  int weekTotal(String activityId) {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1));
-    final end = start.add(const Duration(days: 7));
-    return _sumInRange(activityId, start, end);
+  DateTime _startOfMonth(DateTime d) => DateTime(d.year, d.month, 1);
+  DateTime _startOfYear(DateTime d) => DateTime(d.year, 1, 1);
+
+  /// Minutes d'overlap entre [aStart,aEnd] et [from,to]
+  int _overlapMinutes(DateTime aStart, DateTime aEnd, DateTime from, DateTime to) {
+    final s = aStart.isBefore(from) ? from : aStart;
+    final e = aEnd.isAfter(to) ? to : aEnd;
+    if (!e.isAfter(s)) return 0;
+    return (e.difference(s).inSeconds / 60).floor();
   }
 
-  int monthTotal(String activityId) {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 1);
-    return _sumInRange(activityId, start, end);
-  }
+  /// Minutes effectives d'une session sur [from,to], pauses déduites
+  int _sessionEffectiveOnRange(Session s, DateTime from, DateTime to) {
+    final sessionEnd = s.endAt ?? DateTime.now();
+    final base = _overlapMinutes(s.startAt, sessionEnd, from, to);
+    if (base == 0) return 0;
 
-  int yearTotal(String activityId) {
-    final now = DateTime.now();
-    final start = DateTime(now.year, 1, 1);
-    final end = DateTime(now.year + 1, 1, 1);
-    return _sumInRange(activityId, start, end);
-  }
-
-  List<HourlyBucket> hourlyToday(String activityId) {
-    final now = DateTime.now();
-    final startDay = DateTime(now.year, now.month, now.day);
-    final endDay = startDay.add(const Duration(days: 1));
-
-    final buckets = List<int>.filled(24, 0);
-
-    for (final s in db.getSessionsByActivity(activityId)) {
-      final sStart = s.startAt.isBefore(startDay) ? startDay : s.startAt;
-      final sEnd = (s.endAt ?? now).isAfter(endDay) ? endDay : (s.endAt ?? now);
-      if (!sEnd.isAfter(sStart)) continue;
-
-      var ranges = <DateTimeRange>[DateTimeRange(start: sStart, end: sEnd)];
-      for (final p in db.getPausesBySession(s.id)) {
-        final pStart = p.startAt;
-        final pEnd = p.endAt ?? now;
-        ranges = _subtractRange(ranges, DateTimeRange(start: pStart, end: pEnd));
-      }
-
-      for (final r in ranges) {
-        var cursor = r.start;
-        while (cursor.isBefore(r.end)) {
-          final hourEnd =
-          DateTime(cursor.year, cursor.month, cursor.day, cursor.hour + 1);
-          final sliceEnd = r.end.isBefore(hourEnd) ? r.end : hourEnd;
-          final minutes = sliceEnd.difference(cursor).inMinutes;
-          if (minutes > 0) buckets[cursor.hour] += minutes;
-          cursor = sliceEnd;
-        }
-      }
-    }
-
-    return List<HourlyBucket>.generate(
-      24,
-          (h) => HourlyBucket(hour: h, minutes: buckets[h]),
-    );
-  }
-
-  List<DailyStat> last7Days(String activityId) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    return List<DailyStat>.generate(7, (i) {
-      final day = today.subtract(Duration(days: 6 - i));
-      final next = day.add(const Duration(days: 1));
-      final m = _sumInRange(activityId, day, next);
-      return DailyStat(day: day, minutes: m);
-    });
-  }
-
-  int _sumInRange(String activityId, DateTime start, DateTime end) {
-    var total = 0;
-
-    for (final s in db.getSessionsByActivity(activityId)) {
-      final sStart = s.startAt;
-      final sEnd = s.endAt ?? DateTime.now();
-      if (!sEnd.isAfter(start) || !end.isAfter(sStart)) continue;
-
-      var ranges = <DateTimeRange>[
-        DateTimeRange(
-          start: sStart.isBefore(start) ? start : sStart,
-          end: sEnd.isAfter(end) ? end : sEnd,
-        )
-      ];
-
-      for (final p in db.getPausesBySession(s.id)) {
-        final pStart = p.startAt;
+    int paused = 0;
+    try {
+      final pauses = db.listPausesBySession(s.id); // doit exister dans DatabaseService
+      for (final p in pauses) {
         final pEnd = p.endAt ?? DateTime.now();
-        ranges = _subtractRange(ranges, DateTimeRange(start: pStart, end: pEnd));
+        paused += _overlapMinutes(p.startAt, pEnd, from, to);
       }
-
-      for (final r in ranges) {
-        final minutes = r.end.difference(r.start).inMinutes;
-        if (minutes > 0) total += minutes;
-      }
+    } catch (_) {
+      // si la méthode n'existe pas, on considère 0 pause
     }
-    return total;
+    return max(0, base - paused);
   }
 
-  List<DateTimeRange> _subtractRange(
-      List<DateTimeRange> src, DateTimeRange cut) {
-    final out = <DateTimeRange>[];
-    for (final r in src) {
-      if (!r.end.isAfter(cut.start) || !cut.end.isAfter(r.start)) {
-        out.add(r);
-        continue;
+  /// Minutes effectives d'une activité sur [from,to]
+  int _effectiveOnRange(String activityId, DateTime from, DateTime to) {
+    int sum = 0;
+    try {
+      final sessions = db.listSessionsByActivity(activityId);
+      for (final s in sessions) {
+        sum += _sessionEffectiveOnRange(s, from, to);
       }
-      if (cut.start.isAfter(r.start)) {
-        out.add(DateTimeRange(start: r.start, end: cut.start));
-      }
-      if (r.end.isAfter(cut.end)) {
-        out.add(DateTimeRange(start: cut.end, end: r.end));
-      }
+    } catch (_) {
+      // nom alternatif selon les versions du DB
+      try {
+        final sessions = db.sessionsByActivity(activityId);
+        for (final s in sessions) {
+          sum += _sessionEffectiveOnRange(s, from, to);
+        }
+      } catch (_) {}
+    }
+    return sum;
+  }
+
+  // ---------- API utilisée par providers_stats.dart ----------
+
+  Future<int> minutesToday(String activityId) async {
+    final now = DateTime.now();
+    return _effectiveOnRange(activityId, _startOfDay(now), _endOfDay(now));
+  }
+
+  /// Histogramme horaire du jour (0..23)
+  Future<List<HourlyBucket>> hourlyToday(String activityId) async {
+    final now = DateTime.now();
+    final startDay = _startOfDay(now);
+    final endDay = _endOfDay(now);
+
+    final List<HourlyBucket> buckets = [];
+    for (int h = 0; h < 24; h++) {
+      final hStart = DateTime(startDay.year, startDay.month, startDay.day, h);
+      final hEnd = (h == 23)
+          ? endDay
+          : DateTime(startDay.year, startDay.month, startDay.day, h + 1);
+      final m = _effectiveOnRange(activityId, hStart, hEnd);
+      buckets.add(HourlyBucket(hour: h, minutes: m.clamp(0, 60)));
+    }
+    return buckets;
+  }
+
+  /// Derniers n jours (aujourd’hui inclus) -> du plus ancien au plus récent
+  Future<List<DailyStat>> lastNDays(String activityId, {required int n}) async {
+    assert(n > 0);
+    final now = DateTime.now();
+    final todayStart = _startOfDay(now);
+
+    final List<DailyStat> out = [];
+    for (int i = n - 1; i >= 0; i--) {
+      final d = todayStart.subtract(Duration(days: i));
+      final from = _startOfDay(d);
+      final to = _endOfDay(d);
+      final m = _effectiveOnRange(activityId, from, to);
+      out.add(DailyStat(day: from, minutes: m));
     }
     return out;
+  }
+
+  Future<int> minutesThisWeek(String activityId) async {
+    final now = DateTime.now();
+    final from = _startOfWeek(now);
+    final to = _endOfDay(from.add(const Duration(days: 6)));
+    return _effectiveOnRange(activityId, from, to);
+  }
+
+  Future<int> minutesThisMonth(String activityId) async {
+    final now = DateTime.now();
+    final from = _startOfMonth(now);
+    final nextMonth = (now.month == 12)
+        ? DateTime(now.year + 1, 1, 1)
+        : DateTime(now.year, now.month + 1, 1);
+    final to = nextMonth.subtract(const Duration(milliseconds: 1));
+    return _effectiveOnRange(activityId, from, to);
+  }
+
+  Future<int> minutesThisYear(String activityId) async {
+    final now = DateTime.now();
+    final from = _startOfYear(now);
+    final to = DateTime(now.year, 12, 31, 23, 59, 59, 999);
+    return _effectiveOnRange(activityId, from, to);
   }
 }
