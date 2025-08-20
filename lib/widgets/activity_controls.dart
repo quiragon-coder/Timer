@@ -3,9 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 
-/// Boutons Start / Pause↔Reprendre / Stop.
-/// - compact:true  -> icônes seules (liste)
-/// - compact:false -> boutons avec libellés (page détail)
 class ActivityControls extends ConsumerStatefulWidget {
   final String activityId;
   final bool compact;
@@ -23,78 +20,64 @@ class ActivityControls extends ConsumerStatefulWidget {
 class _ActivityControlsState extends ConsumerState<ActivityControls> {
   Future<void> _start() async {
     final db = ref.read(dbProvider);
-    await db.start(widget.activityId);      // ← noms standard
-    if (!mounted) return;
-    setState(() {});                        // petite MAJ locale
+    await db.start(widget.activityId);
+    if (mounted) setState(() {});
   }
 
   Future<void> _togglePause() async {
     final db = ref.read(dbProvider);
     if (!db.isRunning(widget.activityId)) return;
-    await db.togglePause(widget.activityId); // ← noms standard
-    if (!mounted) return;
-    setState(() {});
+    await db.togglePause(widget.activityId);
+    if (mounted) setState(() {});
   }
 
   Future<void> _stop() async {
     final db = ref.read(dbProvider);
     if (!db.isRunning(widget.activityId)) return;
-    await db.stop(widget.activityId);       // ← noms standard
-    if (!mounted) return;
-    setState(() {});
+    await db.stop(widget.activityId);
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
     final running = db.isRunning(widget.activityId);
-    final paused  = running && db.isPaused(widget.activityId);
+    final paused = db.isPaused(widget.activityId);
 
-    if (!widget.compact) {
-      // Version “riche” (page détail) — Wrap = responsive
-      return Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        children: [
-          FilledButton.icon(
-            onPressed: running ? null : _start,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Démarrer'),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: running ? _togglePause : null,
-            icon: Icon(paused ? Icons.play_arrow : Icons.pause),
-            label: Text(paused ? 'Reprendre' : 'Mettre en pause'),
-          ),
-          OutlinedButton.icon(
-            onPressed: running ? _stop : null,
-            icon: const Icon(Icons.stop),
-            label: const Text('Arrêter'),
-          ),
-        ],
-      );
-    }
+    // Style “compact” pour mobile / petit espace
+    final pad = widget.compact ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6) : null;
+    final visual = widget.compact ? VisualDensity.compact : VisualDensity.standard;
 
-    // Version compacte (liste) — icônes seules
+    final startBtn = ElevatedButton.icon(
+      onPressed: running ? null : _start,
+      icon: const Icon(Icons.play_arrow),
+      label: const Text('Démarrer'),
+      style: ElevatedButton.styleFrom(padding: pad, visualDensity: visual),
+    );
+
+    final pauseBtn = OutlinedButton.icon(
+      onPressed: running ? _togglePause : null,
+      icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+      label: Text(paused ? 'Reprendre' : 'Pause'),
+      style: OutlinedButton.styleFrom(padding: pad, visualDensity: visual),
+    );
+
+    final stopBtn = TextButton.icon(
+      onPressed: running ? _stop : null,
+      icon: const Icon(Icons.stop),
+      label: const Text('Stop'),
+      style: TextButton.styleFrom(padding: pad, visualDensity: visual),
+    );
+
+    // Wrap = casse automatiquement la ligne si pas assez de place
     return Wrap(
       spacing: 8,
       runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        IconButton.filled(
-          tooltip: 'Démarrer',
-          onPressed: running ? null : _start,
-          icon: const Icon(Icons.play_arrow),
-        ),
-        IconButton.filledTonal(
-          tooltip: paused ? 'Reprendre' : 'Mettre en pause',
-          onPressed: running ? _togglePause : null,
-          icon: Icon(paused ? Icons.play_arrow : Icons.pause),
-        ),
-        IconButton.outlined(
-          tooltip: 'Arrêter',
-          onPressed: running ? _stop : null,
-          icon: const Icon(Icons.stop),
-        ),
+        if (!running) startBtn,
+        if (running) pauseBtn,
+        if (running) stopBtn,
       ],
     );
   }

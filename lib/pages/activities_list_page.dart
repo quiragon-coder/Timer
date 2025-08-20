@@ -1,6 +1,4 @@
-// lib/pages/activities_list_page.dart
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,7 +24,7 @@ class ActivitiesListPage extends ConsumerWidget {
         data: (list) {
           if (list.isEmpty) {
             return const Center(
-              child: Text('Aucune activité. Ajoute-en une →'),
+              child: Text('Aucune activit\u00E9. Ajoute-en une \u2192'),
             );
           }
           return ListView.separated(
@@ -84,39 +82,35 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
     final paused = db.isPaused(widget.a.id);
     _syncTicker(running);
 
-    // Totaux pour les chips
-    final weekTotalAsync  = ref.watch(weekTotalProvider(widget.a.id));
+    // Totaux pour les chips (AsyncValue<int>)
+    final weekTotalAsync = ref.watch(weekTotalProvider(widget.a.id));
     final monthTotalAsync = ref.watch(monthTotalProvider(widget.a.id));
-    final yearTotalAsync  = ref.watch(yearTotalProvider(widget.a.id));
+    final yearTotalAsync = ref.watch(yearTotalProvider(widget.a.id));
 
     // minutes today -> pour objectif journalier
     final todayAsync = ref.watch(statsTodayProvider(widget.a.id));
 
+    // badge ⏱ en (mm:ss) si en cours
     final elapsed = db.runningElapsed(widget.a.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      leading: Text(widget.a.emoji, style: const TextStyle(fontSize: 24)),
-      title: Text(widget.a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Ligne 1: point couleur + objectif journalier + badge temps en cours
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 460; // breakpoint simple
+
+        return ListTile(
+          dense: compact,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          leading: Text(widget.a.emoji, style: TextStyle(fontSize: compact ? 22 : 26)),
+          title: Row(
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  "Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j",
+                  widget.a.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: compact ? Theme.of(context).textTheme.titleMedium : null,
                 ),
               ),
               const SizedBox(width: 8),
@@ -130,70 +124,81 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
                     const SizedBox(width: 4),
-                    Text("$mm:$ss"),
+                    Text('$mm:$ss'),
                   ]),
                 ),
             ],
           ),
-
-          const SizedBox(height: 6),
-
-          // Ligne 1 bis: reste aujourd'hui / objectif atteint
-          todayAsync.when(
-            loading: () => const SizedBox.shrink(),
-            error: (e, _) => const SizedBox.shrink(),
-            data: (today) {
-              final goal = widget.a.dailyGoalMinutes ?? 0;
-              if (goal <= 0) return const SizedBox.shrink();
-              if (today >= goal) {
-                return Row(children: const [
-                  Icon(Icons.check_circle, size: 16, color: Colors.green),
-                  SizedBox(width: 6),
-                  Text("Objectif du jour atteint", maxLines: 1, overflow: TextOverflow.ellipsis),
-                ]);
-              } else {
-                final remain = goal - today;
-                return Text(
-                  "Reste $remain min aujourd'hui",
-                  style: Theme.of(context).textTheme.bodySmall,
-                );
-              }
-            },
-          ),
-
-          const SizedBox(height: 6),
-
-          // Ligne 2: chips Semaine / Mois / Année (verts si atteint)
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if ((widget.a.weeklyGoalMinutes ?? 0) > 0)
-                _GoalChip(async: weekTotalAsync, icon: Icons.calendar_view_week, label: "Sem.",
-                    goal: widget.a.weeklyGoalMinutes),
-              if ((widget.a.monthlyGoalMinutes ?? 0) > 0)
-                _GoalChip(async: monthTotalAsync, icon: Icons.calendar_view_month, label: "Mois",
-                    goal: widget.a.monthlyGoalMinutes),
-              if ((widget.a.yearlyGoalMinutes ?? 0) > 0)
-                _GoalChip(async: yearTotalAsync, icon: Icons.calendar_month, label: "Ann.",
-                    goal: widget.a.yearlyGoalMinutes),
+              const SizedBox(height: 6),
+              // Ligne objectifs: point couleur + objectif du jour + info reste/OK
+              Row(
+                children: [
+                  Container(
+                    width: 10, height: 10,
+                    decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              todayAsync.when(
+                loading: () => const SizedBox.shrink(),
+                error: (e, _) => const SizedBox.shrink(),
+                data: (today) {
+                  final goal = widget.a.dailyGoalMinutes ?? 0;
+                  if (goal <= 0) return const SizedBox.shrink();
+                  if (today >= goal) {
+                    return Row(children: const [
+                      Icon(Icons.check_circle, size: 16, color: Colors.green),
+                      SizedBox(width: 6),
+                      Flexible(child: Text('Objectif du jour atteint', overflow: TextOverflow.ellipsis)),
+                    ]);
+                  } else {
+                    final remain = goal - today;
+                    return Text(
+                      'Reste $remain min aujourd\'hui',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              // Chips Semaine/Mois/Année (Wrap -> casse ligne)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if ((widget.a.weeklyGoalMinutes ?? 0) > 0)
+                    _GoalChip(async: weekTotalAsync, icon: Icons.calendar_view_week, label: 'Sem.',
+                        goal: widget.a.weeklyGoalMinutes),
+                  if ((widget.a.monthlyGoalMinutes ?? 0) > 0)
+                    _GoalChip(async: monthTotalAsync, icon: Icons.calendar_view_month, label: 'Mois',
+                        goal: widget.a.monthlyGoalMinutes),
+                  if ((widget.a.yearlyGoalMinutes ?? 0) > 0)
+                    _GoalChip(async: yearTotalAsync, icon: Icons.calendar_month, label: 'Ann.',
+                        goal: widget.a.yearlyGoalMinutes),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Contrôles: Wrap + mode compact sur petits écrans
+              ActivityControls(activityId: widget.a.id, compact: compact),
             ],
           ),
-
-          const SizedBox(height: 8),
-          OverflowBar(
-            alignment: MainAxisAlignment.start,
-            spacing: 8,
-            overflowSpacing: 8,
-            children: [
-              ActivityControls(activityId: widget.a.id, compact: true),
-            ],
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: widget.a)),
           ),
-        ],
-      ),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: widget.a)),
-      ),
+        );
+      },
     );
   }
 }
@@ -221,7 +226,7 @@ class _GoalChip extends StatelessWidget {
         final reached = g > 0 && m >= g;
         return Chip(
           avatar: Icon(icon, size: 16, color: reached ? Colors.green : null),
-          label: Text(g > 0 ? "$label: $m / $g" : "$label: $m"),
+          label: Text(g > 0 ? '$label: $m / $g' : '$label: $m'),
           backgroundColor: reached ? Colors.green.withOpacity(.12) : null,
           side: reached ? const BorderSide(color: Colors.green) : null,
         );

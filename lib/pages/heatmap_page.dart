@@ -1,58 +1,60 @@
-﻿import "package:flutter/material.dart";
-import "package:flutter_riverpod/flutter_riverpod.dart";
+﻿// lib/pages/heatmap_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import "../providers_heatmap.dart";
-import "../widgets/heatmap.dart";
-
-class ActivityHeatmapPage extends ConsumerWidget {
+class ActivityHeatmapPage extends ConsumerStatefulWidget {
   final String activityId;
-  final String name;
-  final Color color;
+  final String title;
 
   const ActivityHeatmapPage({
     super.key,
     required this.activityId,
-    required this.name,
-    required this.color,
+    required this.title,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final asyncMap = ref.watch(heatmapYearProvider(activityId));
+  ConsumerState<ActivityHeatmapPage> createState() => _ActivityHeatmapPageState();
+}
+
+class _ActivityHeatmapPageState extends ConsumerState<ActivityHeatmapPage> {
+  int _year = DateTime.now().year;
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Heatmap - " + name)),
-      body: asyncMap.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text("Error: " + e.toString())),
-        data: (map) {
-          return ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("Last 12 months", style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Heatmap(
-                        data: map,
-                        baseColor: color,
-                        maxMinutes: 60,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        "Each square is one day. Color intensity scales with minutes tracked.",
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
+      appBar: AppBar(
+        title: Text('${widget.title} — Heatmap $_year'),
+      ),
+      body: Center(
+        child: Text(
+          "Heatmap annuelle en cours d'implémentation.\n"
+              "Activité: ${widget.activityId}\n"
+              "Année: $_year",
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            FilledButton.tonal(
+              onPressed: () => setState(() => _year--),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [Icon(Icons.chevron_left), SizedBox(width: 6), Text('Année -')],
               ),
-            ],
-          );
-        },
+            ),
+            FilledButton.tonal(
+              onPressed: () => setState(() => _year++),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [Text('Année +'), SizedBox(width: 6), Icon(Icons.chevron_right)],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
