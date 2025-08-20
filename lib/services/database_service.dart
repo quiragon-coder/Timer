@@ -2,51 +2,15 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
+import '../models/session.dart';
+import '../models/pause.dart';
 
-/// Modèles internes simples pour les sessions et les pauses.
-/// (on les garde ici pour éviter les conflits et faciliter la maintenance)
-class Session {
-  final String id;
-  final String activityId;
-  final DateTime startAt;
-  DateTime? endAt;
-
-  Session({
-    required this.id,
-    required this.activityId,
-    required this.startAt,
-    this.endAt,
-  });
-
-  bool get isRunning => endAt == null;
-}
-
-class Pause {
-  final String id;
-  final String sessionId;
-  final DateTime startAt;
-  DateTime? endAt;
-
-  Pause({
-    required this.id,
-    required this.sessionId,
-    required this.startAt,
-    this.endAt,
-  });
-
-  bool get isOngoing => endAt == null;
-}
-
-/// Service “base de données” en mémoire.
-/// Il notifie via ChangeNotifier (utilisé par Riverpod).
+/// Service en mémoire (ChangeNotifier) qui gère activités, sessions et pauses.
 class DatabaseService extends ChangeNotifier {
-  // --- Activités ------------------------------------------------------------
+  // ------------------ Activités ------------------
   final List<Activity> _activities = <Activity>[];
-
-  /// Liste non modifiable à exposer publiquement
   List<Activity> get activities => UnmodifiableListView(_activities);
 
-  /// Création d’une activité
   Activity createActivity({
     required String name,
     required String emoji,
@@ -72,7 +36,7 @@ class DatabaseService extends ChangeNotifier {
     return a;
   }
 
-  /// Mise à jour partielle d’une activité (utilisé quand tu modifies les objectifs)
+  /// Mise à jour d’une activité existante
   Activity updateActivity(Activity updated) {
     final i = _activities.indexWhere((x) => x.id == updated.id);
     if (i >= 0) {
@@ -82,124 +46,113 @@ class DatabaseService extends ChangeNotifier {
     return updated;
   }
 
-  // --- Sessions & Pauses ----------------------------------------------------
+  // ------------------ Sessions / Pauses ------------------
   final Map<String, List<Session>> _sessionsByActivity = {};
   final Map<String, List<Pause>> _pausesBySession = {};
 
-  // Exposition en lecture seule – pour compatibilité avec
-  // le code qui fait `db.sessions[...]` et `db.pauses[...]`.
+  // Exposition lecture seule (utilisé par certains widgets)
   Map<String, List<Session>> get sessions =>
       UnmodifiableMapView(_sessionsByActivity);
   Map<String, List<Pause>> get pauses =>
       UnmodifiableMapView(_pausesBySession);
 
-  /// Session en cours par activité
+  // Session courante par activité
   final Map<String, Session> _currentByActivity = {};
-  /// Pause en cours par session
+  // Pause courante par session
   final Map<String, Pause> _currentPauseBySession = {};
 
-  List<Session> getSessionsByActivity(String activityId) {
-    return UnmodifiableListView(_sessionsByActivity[activityId] ?? const []);
-  }
+  // --- Helpers d’accès (compat avec ancien code)
+  List<Session> getSessionsByActivity(String activityId) =>
+      UnmodifiableListView(_sessionsByActivity[activityId] ?? const []);
+  List<Session> listSessionsByActivity(String activityId) =>
+      getSessionsByActivity(activityId);
+  List<Session> sessionsByActivity(String activityId) =>
+      getSessionsByActivity(activityId);
 
-  List<Pause> getPausesBySession(String sessionId) {
-    return UnmodifiableListView(_pausesBySession[sessionId] ?? const []);
-  }
+  List<Pause> getPausesBySession(String sessionId) =>
+      UnmodifiableListView(_pausesBySession[sessionId] ?? const []);
+  List<Pause> listPausesBySession(String sessionId) =>
+      getPausesBySession(sessionId);
 
   bool isRunning(String activityId) => _currentByActivity[activityId] != null;
+
   bool isPaused(String activityId) {
     final s = _currentByActivity[activityId];
     if (s == null) return false;
     final p = _currentPauseBySession[s.id];
-    return p?.isOngoing == true;
+    return p?.endAt == null;
   }
 
-  /// Durée écoulée effective (maintenant - startAt - pauses)
+  /// Début de la session courante (ou null)
+  DateTime? currentSessionStart(String activityId) =>
+      _currentByActivity[activityId]?.startAt;
+
+  /// Durée effective écoulée de la session courante (maintenant - pauses)
   Duration runningElapsed(String activityId) {
     final s = _currentByActivity[activityId];
     if (s == null) return Duration.zero;
     final end = DateTime.now();
-
     final pauses = _pausesBySession[s.id] ?? const [];
     var paused = Duration.zero;
     for (final p in pauses) {
       final pEnd = p.endAt ?? end;
       paused += pEnd.difference(p.startAt);
     }
-
     return end.difference(s.startAt) - paused;
   }
 
-  // --- Actions rapides (Start / Pause / Resume / Stop) ----------------------
-
-  /// Démarrer une session (si aucune en cours pour cette activité)
+  // ------------------ Actions rapides ------------------
   void quickStart(String activityId) {
     if (_currentByActivity[activityId] != null) return;
-
     final s = Session(
       id: 's_${DateTime.now().microsecondsSinceEpoch}',
       activityId: activityId,
       startAt: DateTime.now(),
+      endAt: null,
     );
     (_sessionsByActivity[activityId] ??= []).add(s);
     _currentByActivity[activityId] = s;
     notifyListeners();
   }
 
-  /// Pause <-> Reprendre
   void quickTogglePause(String activityId) {
     final s = _currentByActivity[activityId];
     if (s == null) return;
 
     final currentPause = _currentPauseBySession[s.id];
-    if (currentPause == null || !currentPause.isOngoing) {
-      // On démarre une pause
+    if (currentPause == null || currentPause.endAt != null) {
+      // start pause
       final p = Pause(
         id: 'p_${DateTime.now().microsecondsSinceEpoch}',
         sessionId: s.id,
         startAt: DateTime.now(),
+        endAt: null,
       );
       (_pausesBySession[s.id] ??= []).add(p);
       _currentPauseBySession[s.id] = p;
     } else {
-      // On termine la pause
+      // end pause
       currentPause.endAt = DateTime.now();
       _currentPauseBySession.remove(s.id);
     }
     notifyListeners();
   }
 
-  /// Arrêter la session en cours (et fermer la pause si ouverte)
   void quickStop(String activityId) {
     final s = _currentByActivity[activityId];
     if (s == null) return;
 
-    // clôture pause éventuelle
     final p = _currentPauseBySession[s.id];
-    if (p != null && p.isOngoing) {
+    if (p != null && p.endAt == null) {
       p.endAt = DateTime.now();
       _currentPauseBySession.remove(s.id);
     }
-
     s.endAt = DateTime.now();
     _currentByActivity.remove(activityId);
     notifyListeners();
   }
 
-  // Helpers pour les stats ----------------------------------------------------
-  /// Toutes les sessions terminées d’un jour donné (UTC libre)
-  Iterable<Session> sessionsOnDay(String activityId, DateTime day) sync* {
-    final start = DateTime(day.year, day.month, day.day);
-    final end = start.add(const Duration(days: 1));
-    for (final s in _sessionsByActivity[activityId] ?? const []) {
-      final sEnd = s.endAt ?? DateTime.now();
-      if (sEnd.isAfter(start) && s.startAt.isBefore(end)) {
-        yield s;
-      }
-    }
-  }
-
-  /// Durée effective d’une session (en minutes) sur tout son intervalle
+  // ------------------ Aide stats ------------------
   int effectiveMinutes(Session s) {
     final end = s.endAt ?? DateTime.now();
     var paused = Duration.zero;
@@ -207,8 +160,8 @@ class DatabaseService extends ChangeNotifier {
       final pEnd = p.endAt ?? end;
       paused += pEnd.difference(p.startAt);
     }
-    final dur = end.difference(s.startAt) - paused;
-    final m = dur.inMinutes;
+    final d = end.difference(s.startAt) - paused;
+    final m = d.inMinutes;
     return m < 0 ? 0 : m;
   }
 }

@@ -1,118 +1,153 @@
-import "package:habits_timer/models/stats.dart";
-import "package:habits_timer/services/database_service.dart";
+import 'package:flutter/material.dart';
+import 'database_service.dart';
+
+class HourlyBucket {
+  final int hour;    // 0..23
+  final int minutes; // minutes passées dans l’heure
+  const HourlyBucket({required this.hour, required this.minutes});
+}
+
+class DailyStat {
+  final DateTime day; // minuit du jour
+  final int minutes;
+  const DailyStat({required this.day, required this.minutes});
+}
 
 class StatsService {
   final DatabaseService db;
   StatsService(this.db);
 
-  Future<int> minutesToday(String activityId) async {
+  // -------- Totaux simples --------
+  int todayTotal(String activityId) {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
-    return _minutesInRange(activityId, start, end);
+    return _sumInRange(activityId, start, end);
   }
 
-  Future<List<HourlyBucket>> hourlyToday(String activityId) async {
+  int weekTotal(String activityId) {
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
-
-    final buckets = List.generate(24, (i) => HourlyBucket(hour: i, minutes: 0));
-    final sessions = db.listSessionsByActivity(activityId);
-
-    for (final s in sessions) {
-      final sStart = s.startAt;
-      final sEnd = s.endAt ?? DateTime.now();
-      final ovStart = sStart.isAfter(start) ? sStart : start;
-      final ovEnd = sEnd.isBefore(end) ? sEnd : end;
-      if (!ovEnd.isAfter(ovStart)) continue;
-
-      // Soustraire les pauses
-      var effective = ovEnd.difference(ovStart).inMinutes;
-      final pauses = db.listPausesBySession(s.id);
-      for (final p in pauses) {
-        final ppStart = p.startAt.isAfter(ovStart) ? p.startAt : ovStart;
-        final ppEnd = (p.endAt ?? DateTime.now()).isBefore(ovEnd) ? (p.endAt ?? DateTime.now()) : ovEnd;
-        if (ppEnd.isAfter(ppStart)) {
-          effective -= ppEnd.difference(ppStart).inMinutes;
-        }
-      }
-      if (effective <= 0) continue;
-
-      // RÃ©partir par heure
-      var cursor = ovStart;
-      while (cursor.isBefore(ovEnd)) {
-        final bucketHourStart = DateTime(cursor.year, cursor.month, cursor.day, cursor.hour);
-        final bucketHourEnd = bucketHourStart.add(const Duration(hours: 1));
-        final splitEnd = bucketHourEnd.isBefore(ovEnd) ? bucketHourEnd : ovEnd;
-        final mins = splitEnd.difference(cursor).inMinutes;
-        if (mins > 0) {
-          final h = cursor.hour;
-          buckets[h] = HourlyBucket(hour: h, minutes: buckets[h].minutes + mins);
-        }
-        cursor = splitEnd;
-      }
-    }
-    return buckets;
-  }
-
-  Future<List<DailyStat>> last7DaysStats(String activityId) async {
-    final today = DateTime.now();
-    final start = DateTime(today.year, today.month, today.day).subtract(const Duration(days: 6));
-    final days = <DailyStat>[];
-    for (int i = 0; i < 7; i++) {
-      final dStart = DateTime(start.year, start.month, start.day).add(Duration(days: i));
-      final dEnd = dStart.add(const Duration(days: 1));
-      final m = await _minutesInRange(activityId, dStart, dEnd);
-      days.add(DailyStat(day: dStart, minutes: m));
-    }
-    return days;
-  }
-
-  Future<int> minutesThisWeek(String activityId) async {
-    final now = DateTime.now();
-    final dow = now.weekday; // 1..7
-    final start = DateTime(now.year, now.month, now.day).subtract(Duration(days: dow - 1));
+    // Lundi 00:00 comme début de semaine
+    final start = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: (now.weekday - 1)));
     final end = start.add(const Duration(days: 7));
-    return _minutesInRange(activityId, start, end);
+    return _sumInRange(activityId, start, end);
   }
 
-  Future<int> minutesThisMonth(String activityId) async {
+  int monthTotal(String activityId) {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, 1);
-    final end = (now.month == 12) ? DateTime(now.year + 1, 1, 1) : DateTime(now.year, now.month + 1, 1);
-    return _minutesInRange(activityId, start, end);
+    final end = DateTime(now.year, now.month + 1, 1);
+    return _sumInRange(activityId, start, end);
   }
 
-  Future<int> minutesThisYear(String activityId) async {
+  int yearTotal(String activityId) {
     final now = DateTime.now();
     final start = DateTime(now.year, 1, 1);
     final end = DateTime(now.year + 1, 1, 1);
-    return _minutesInRange(activityId, start, end);
+    return _sumInRange(activityId, start, end);
   }
 
-  Future<int> _minutesInRange(String activityId, DateTime start, DateTime end) async {
-    int total = 0;
-    final sessions = db.listSessionsByActivity(activityId);
-    for (final s in sessions) {
-      final sStart = s.startAt;
-      final sEnd = s.endAt ?? DateTime.now();
+  // -------- Répartition horaire du jour --------
+  List<HourlyBucket> hourlyToday(String activityId) {
+    final now = DateTime.now();
+    final startDay = DateTime(now.year, now.month, now.day);
+    final endDay = startDay.add(const Duration(days: 1));
 
-      final ovStart = sStart.isAfter(start) ? sStart : start;
-      final ovEnd = sEnd.isBefore(end) ? sEnd : end;
-      if (!ovEnd.isAfter(ovStart)) continue;
+    final buckets = List<int>.filled(24, 0);
+    for (final s in db.getSessionsByActivity(activityId)) {
+      final sStart = s.startAt.isBefore(startDay) ? startDay : s.startAt;
+      final sEnd = (s.endAt ?? now).isAfter(endDay) ? endDay : (s.endAt ?? now);
+      if (!sEnd.isAfter(sStart)) continue;
 
-      var eff = ovEnd.difference(ovStart).inMinutes;
-      final pauses = db.listPausesBySession(s.id);
-      for (final p in pauses) {
-        final ppStart = p.startAt.isAfter(ovStart) ? p.startAt : ovStart;
-        final ppEnd = (p.endAt ?? DateTime.now()).isBefore(ovEnd) ? (p.endAt ?? DateTime.now()) : ovEnd;
-        if (ppEnd.isAfter(ppStart)) {
-          eff -= ppEnd.difference(ppStart).inMinutes;
+      // Soustraire les pauses
+      var ranges = <DateTimeRange>[DateTimeRange(start: sStart, end: sEnd)];
+      for (final p in db.getPausesBySession(s.id)) {
+        final pStart = p.startAt;
+        final pEnd = p.endAt ?? now;
+        ranges = _subtractRange(ranges, DateTimeRange(start: pStart, end: pEnd));
+      }
+
+      for (final r in ranges) {
+        // Réparti par heure (approx au minute près)
+        DateTime cursor = r.start;
+        while (cursor.isBefore(r.end)) {
+          final hourEnd = DateTime(cursor.year, cursor.month, cursor.day, cursor.hour + 1);
+          final sliceEnd = r.end.isBefore(hourEnd) ? r.end : hourEnd;
+          final minutes = sliceEnd.difference(cursor).inMinutes;
+          if (minutes > 0) {
+            buckets[cursor.hour] += minutes;
+          }
+          cursor = sliceEnd;
         }
       }
-      if (eff > 0) total += eff;
+    }
+
+    return List<HourlyBucket>.generate(
+      24,
+          (h) => HourlyBucket(hour: h, minutes: buckets[h]),
+    );
+  }
+
+  // -------- 7 derniers jours --------
+  List<DailyStat> last7Days(String activityId) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return List<DailyStat>.generate(7, (i) {
+      final day = today.subtract(Duration(days: 6 - i));
+      final next = day.add(const Duration(days: 1));
+      final m = _sumInRange(activityId, day, next);
+      return DailyStat(day: day, minutes: m);
+    });
+  }
+
+  // -------- Utils --------
+  int _sumInRange(String activityId, DateTime start, DateTime end) {
+    var total = 0;
+    for (final s in db.getSessionsByActivity(activityId)) {
+      final sStart = s.startAt;
+      final sEnd = s.endAt ?? DateTime.now();
+      if (!sEnd.isAfter(start) || !end.isAfter(sStart)) continue;
+
+      var ranges = <DateTimeRange>[
+        DateTimeRange(
+          start: sStart.isBefore(start) ? start : sStart,
+          end: sEnd.isAfter(end) ? end : sEnd,
+        )
+      ];
+
+      for (final p in db.getPausesBySession(s.id)) {
+        final pStart = p.startAt;
+        final pEnd = p.endAt ?? DateTime.now();
+        ranges = _subtractRange(ranges, DateTimeRange(start: pStart, end: pEnd));
+      }
+
+      for (final r in ranges) {
+        final minutes = r.end.difference(r.start).inMinutes;
+        if (minutes > 0) total += minutes;
+      }
     }
     return total;
+  }
+
+  /// Soustrait une plage [cut] à une liste de plages [src] (opération de découpe).
+  List<DateTimeRange> _subtractRange(
+      List<DateTimeRange> src, DateTimeRange cut) {
+    final out = <DateTimeRange>[];
+    for (final r in src) {
+      if (!r.end.isAfter(cut.start) || !cut.end.isAfter(r.start)) {
+        out.add(r); // pas d'intersection
+        continue;
+      }
+      // partie gauche
+      if (cut.start.isAfter(r.start)) {
+        out.add(DateTimeRange(start: r.start, end: cut.start));
+      }
+      // partie droite
+      if (r.end.isAfter(cut.end)) {
+        out.add(DateTimeRange(start: cut.end, end: r.end));
+      }
+    }
+    return out;
   }
 }
