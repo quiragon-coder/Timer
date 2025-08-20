@@ -1,49 +1,28 @@
-import 'dart:async';
+// lib/widgets/activity_controls.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers.dart';
-import '../providers_stats.dart';
+import '../providers.dart'; // exposes dbProvider
 
-/// Invalide les providers de stats liés à une activité.
-/// (Je n’invalide pas de "last7Provider" ici pour rester compatible
-///  avec ton fichier providers_stats.dart actuel.)
-void _invalidateStats(WidgetRef ref, String id) {
-  ref.invalidate(statsTodayProvider(id));
-  ref.invalidate(hourlyTodayProvider(id));
-  ref.invalidate(weekTotalProvider(id));
-  ref.invalidate(monthTotalProvider(id));
-  ref.invalidate(yearTotalProvider(id));
-}
-
-/// Boutons Start / Pause-Reprendre / Stop, responsives.
+/// Start / Pause / Stop controls for one activity.
 class ActivityControls extends ConsumerStatefulWidget {
-  final String activityId;
-  final bool compact;
-
   const ActivityControls({
     super.key,
     required this.activityId,
     this.compact = false,
   });
 
+  final String activityId;
+  final bool compact;
+
   @override
   ConsumerState<ActivityControls> createState() => _ActivityControlsState();
 }
 
 class _ActivityControlsState extends ConsumerState<ActivityControls> {
-  Timer? _ticker;
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
   Future<void> _start() async {
     final db = ref.read(dbProvider);
     await db.start(widget.activityId);
-    _invalidateStats(ref, widget.activityId);
     if (mounted) setState(() {});
   }
 
@@ -51,7 +30,6 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
     final db = ref.read(dbProvider);
     if (!db.isRunning(widget.activityId)) return;
     await db.togglePause(widget.activityId);
-    _invalidateStats(ref, widget.activityId);
     if (mounted) setState(() {});
   }
 
@@ -59,65 +37,101 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
     final db = ref.read(dbProvider);
     if (!db.isRunning(widget.activityId)) return;
     await db.stop(widget.activityId);
-    _invalidateStats(ref, widget.activityId);
     if (mounted) setState(() {});
-  }
-
-  void _syncTicker(bool running) {
-    final active = _ticker?.isActive ?? false;
-    if (running && !active) {
-      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
-    } else if (!running && active) {
-      _ticker?.cancel();
-      _ticker = null;
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // On WATCH le db pour reconstruire l’UI quand l’état change
+    // Watch to rebuild when DB notifies changes
     final db = ref.watch(dbProvider);
 
-    final running = db.isRunning(widget.activityId);
-    final paused  = db.isPaused(widget.activityId);
+    final bool running = db.isRunning(widget.activityId);
+    final bool paused  = db.isPaused(widget.activityId);
 
-    _syncTicker(running);
+    // Pause button appears only when a session is running.
+    final bool canPauseOrResume = running;
+    final bool showResume = running && paused; // true -> label "Reprendre"
 
-    final isSmall = widget.compact;
-    final ButtonStyle smallStyle = FilledButton.styleFrom(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-    );
+    final EdgeInsets pad = widget.compact
+        ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
+        : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
 
-    final pauseResumeLabel = paused ? "Reprendre" : "Mettre en pause";
-    final pauseResumeIcon  = paused ? Icons.play_arrow : Icons.pause;
+    final TextStyle? txt = widget.compact
+        ? Theme.of(context).textTheme.labelLarge
+        : Theme.of(context).textTheme.labelLarge;
 
-    // Wrap pour éviter les overflows -> responsive
+    // Use Wrap for responsiveness (no RenderOverflow issues)
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: WrapAlignment.start,
+      spacing: 12,
+      runSpacing: 12,
       children: [
-        FilledButton.icon(
-          style: isSmall ? smallStyle : const ButtonStyle(),
-          onPressed: running ? null : _start,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text("Démarrer"),
+        _btn(
+          enabled: !running,
+          onPressed: _start,
+          icon: Icons.play_arrow_rounded,
+          label: 'Démarrer',
+          pad: pad,
+          textStyle: txt,
+          primary: true,
         ),
-        FilledButton.tonalIcon(
-          style: isSmall ? smallStyle : const ButtonStyle(),
-          onPressed: running ? _togglePause : null,
-          icon: Icon(pauseResumeIcon),
-          label: Text(pauseResumeLabel),
+        _btn(
+          enabled: canPauseOrResume,
+          onPressed: _togglePause,
+          icon: showResume ? Icons.play_arrow_rounded : Icons.pause_rounded,
+          label: showResume ? 'Reprendre' : 'Mettre en pause',
+          pad: pad,
+          textStyle: txt,
         ),
-        FilledButton.tonalIcon(
-          style: isSmall ? smallStyle : const ButtonStyle(),
-          onPressed: running ? _stop : null,
-          icon: const Icon(Icons.stop),
-          label: const Text("Arrêter"),
+        _btn(
+          enabled: running,
+          onPressed: _stop,
+          icon: Icons.stop_rounded,
+          label: 'Arrêter',
+          pad: pad,
+          textStyle: txt,
         ),
       ],
     );
+  }
+
+  Widget _btn({
+    required bool enabled,
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+    required EdgeInsets pad,
+    TextStyle? textStyle,
+    bool primary = false,
+  }) {
+    final ButtonStyle style = (primary
+        ? ElevatedButton.styleFrom(padding: pad)
+        : OutlinedButton.styleFrom(padding: pad))
+        .merge(ButtonStyle(
+      textStyle: WidgetStatePropertyAll(textStyle),
+    ));
+
+    final Widget child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon),
+        const SizedBox(width: 6),
+        Text(label),
+      ],
+    );
+
+    if (primary) {
+      return ElevatedButton(
+        onPressed: enabled ? onPressed : null,
+        style: style,
+        child: child,
+      );
+    } else {
+      return OutlinedButton(
+        onPressed: enabled ? onPressed : null,
+        style: style,
+        child: child,
+      );
+    }
   }
 }
