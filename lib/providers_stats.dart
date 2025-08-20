@@ -2,50 +2,50 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers.dart'; // dbProvider
 import 'services/stats_service.dart';
-import 'models/stats.dart'; // <-- fournit HourlyBucket & DailyStat
+import 'models/stats.dart'; // HourlyBucket & DailyStat
 
-/// Fournit un StatsService basé sur le DatabaseService.
+/// Service de stats basé sur DatabaseService
 final statsServiceProvider = Provider<StatsService>((ref) {
   final db = ref.watch(dbProvider);
   return StatsService(db);
 });
 
-/// Minutes totales aujourd’hui pour une activité
+/// Minutes totales aujourd’hui (Async)
 final statsTodayProvider =
-Provider.family.autoDispose<int, String>((ref, activityId) {
+FutureProvider.autoDispose.family<int, String>((ref, activityId) async {
   final svc = ref.watch(statsServiceProvider);
   return svc.todayTotal(activityId);
 });
 
-/// Répartition horaire aujourd’hui (24 buckets)
-final hourlyTodayProvider =
-Provider.family.autoDispose<List<HourlyBucket>, String>((ref, activityId) {
+/// Répartition horaire aujourd’hui (24 buckets) (Async)
+final hourlyTodayProvider = FutureProvider.autoDispose
+    .family<List<HourlyBucket>, String>((ref, activityId) async {
   final svc = ref.watch(statsServiceProvider);
   return svc.hourlyToday(activityId);
 });
 
-/// Totaux semaine / mois / année
+/// Totaux Semaine / Mois / Année (Async)
 final weekTotalProvider =
-Provider.family.autoDispose<int, String>((ref, activityId) {
+FutureProvider.autoDispose.family<int, String>((ref, activityId) async {
   final svc = ref.watch(statsServiceProvider);
   return svc.weekTotal(activityId);
 });
 
 final monthTotalProvider =
-Provider.family.autoDispose<int, String>((ref, activityId) {
+FutureProvider.autoDispose.family<int, String>((ref, activityId) async {
   final svc = ref.watch(statsServiceProvider);
   return svc.monthTotal(activityId);
 });
 
 final yearTotalProvider =
-Provider.family.autoDispose<int, String>((ref, activityId) {
+FutureProvider.autoDispose.family<int, String>((ref, activityId) async {
   final svc = ref.watch(statsServiceProvider);
   return svc.yearTotal(activityId);
 });
 
-/// 7 derniers jours (chaque élément = minutes pour la journée)
-final last7DaysProvider =
-Provider.family.autoDispose<List<DailyStat>, String>((ref, activityId) {
+/// 7 derniers jours (Async)
+final last7DaysProvider = FutureProvider.autoDispose
+    .family<List<DailyStat>, String>((ref, activityId) async {
   final svc = ref.watch(statsServiceProvider);
   return svc.last7Days(activityId);
 });
