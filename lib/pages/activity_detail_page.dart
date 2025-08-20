@@ -1,16 +1,13 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../models/activity.dart';
 import '../models/session.dart';
-import '../models/pause.dart';
-
-import '../providers.dart';
-import '../providers_stats.dart';
+import '../providers.dart'; // dbProvider
 import '../services/database_service.dart';
-
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
 
@@ -31,7 +28,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     super.dispose();
   }
 
-  void _syncTicker(bool running) {
+  void _ensureTicker(bool running) {
     final active = _ticker?.isActive ?? false;
     if (running && !active) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -46,22 +43,11 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
-    final a = widget.activity;
-    final id = a.id;
-
-    // Invalide les providers de stats à chaque changement DB
-    ref.listen<DatabaseService>(dbProvider, (prev, next) {
-      ref.invalidate(statsTodayProvider(id));
-      ref.invalidate(hourlyTodayProvider(id));
-      ref.invalidate(weekTotalProvider(id));
-      ref.invalidate(monthTotalProvider(id));
-      ref.invalidate(yearTotalProvider(id));
-      if (mounted) setState(() {});
-    });
+    final id = widget.activity.id;
 
     final running = db.isRunning(id);
     final paused = db.isPaused(id);
-    _syncTicker(running);
+    _ensureTicker(running);
 
     final elapsed = db.runningElapsed(id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -71,61 +57,76 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            Text(a.emoji, style: const TextStyle(fontSize: 22)),
+            Text(widget.activity.emoji, style: const TextStyle(fontSize: 22)),
             const SizedBox(width: 8),
-            Expanded(child: Text(a.name, overflow: TextOverflow.ellipsis)),
+            Expanded(
+              child: Text(widget.activity.name,
+                  overflow: TextOverflow.ellipsis),
+            ),
           ],
         ),
         actions: [
+          // badge timer (non-null, rafraîchi par _ticker)
           if (running)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: paused
-                      ? Colors.orange.withOpacity(.15)
-                      : Colors.green.withOpacity(.15),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(paused ? Icons.pause : Icons.timer_outlined, size: 16),
-                    const SizedBox(width: 6),
-                    Text('$mm:$ss'),
-                  ],
-                ),
+            Container(
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color:
+                (paused ? Colors.orange : Colors.green).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(999),
               ),
+              child: Row(children: [
+                Icon(paused ? Icons.pause : Icons.timer_outlined, size: 16),
+                const SizedBox(width: 6),
+                Text('$mm:$ss'),
+              ]),
             ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
-          // En-tête + boutons
+          // Ligne sous le titre : couleur + objectif + contrôles
           Row(
             children: [
               Container(
-                width: 10, height: 10,
-                decoration: BoxDecoration(color: a.color, shape: BoxShape.circle),
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: widget.activity.color,
+                  shape: BoxShape.circle,
+                ),
               ),
               const SizedBox(width: 8),
-              Text('Objectif: ${a.dailyGoalMinutes ?? 0} min/j'),
+              Expanded(
+                child: Text(
+                  'Objectif: ${widget.activity.dailyGoalMinutes ?? 0} min/j',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                spacing: 8,
+                overflowSpacing: 8,
+                children: [
+                  ActivityControls(activityId: id, compact: false),
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          ActivityControls(activityId: id),
+          const SizedBox(height: 24),
 
-          // =====================  HISTORIQUE  =====================
-          const SizedBox(height: 20),
-          Text('Historique', style: Theme.of(context).textTheme.titleLarge),
+          // Historique
+          Text('Historique',
+              style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
           _buildHistory(context, db, id),
+          const SizedBox(height: 16),
 
-          // ========================  STATS  =======================
-          const SizedBox(height: 24),
-          Text('Stats', style: Theme.of(context).textTheme.titleLarge),
+          // Stats (panneau + graphs)
+          Text('Stats', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
           ActivityStatsPanel(activityId: id),
         ],
@@ -133,56 +134,56 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     );
   }
 
-  // ---- Historique (sessions finies + session en cours) ----
+  /// Liste l’historique (session en cours + sessions terminées)
   Widget _buildHistory(
       BuildContext context, DatabaseService db, String activityId) {
-    final df = DateFormat('dd/MM HH:mm');
-    final List<Session> sessions = db.sessionsByActivity(activityId);
+    final fmt = DateFormat('dd/MM HH:mm');
+
+    final sessions = List<Session>.from(db.getSessionsByActivity(activityId))
+      ..sort((a, b) {
+        // Les plus récentes en premier
+        final aEnd = a.endAt ?? DateTime.now();
+        final bEnd = b.endAt ?? DateTime.now();
+        return bEnd.compareTo(aEnd);
+      });
 
     final running = db.isRunning(activityId);
-    final List<Widget> tiles = [];
-
-    // En cours
-    if (running) {
-      final start = db.currentSessionStart(activityId);
-      tiles.add(
-        ListTile(
-          dense: true,
-          leading: const Icon(Icons.play_arrow),
-          title: const Text('En cours'),
-          subtitle: Text(
-              '${df.format(start)} • en cours'), // pas de durée pour en cours
-        ),
+    if (!running && sessions.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text('Aucune session pour le moment',
+            style: Theme.of(context).textTheme.bodyMedium),
       );
     }
 
-    if (sessions.isEmpty && tiles.isEmpty) {
-      return Text(
-        "Aucun historique",
-        style: Theme.of(context).textTheme.bodyMedium,
+    final tiles = <Widget>[];
+
+    // Session en cours (si présente)
+    if (running) {
+      final start = db.currentSessionStart(activityId) ?? DateTime.now();
+      tiles.add(
+        ListTile(
+          leading: const Icon(Icons.play_arrow_rounded, color: Colors.indigo),
+          title: const Text('En cours'),
+          subtitle: Text('${fmt.format(start)} • en cours'),
+        ),
       );
+      tiles.add(const Divider(height: 1));
     }
 
     // Sessions terminées
-    for (final s in sessions) {
-      final String range = '${df.format(s.startAt)} au ${df.format(s.endAt!)}';
-      final Duration d = s.endAt!.difference(s.startAt);
-      final int secs = d.inSeconds;
-      final String dur =
-      secs < 60 ? '${secs}s' : '${d.inMinutes}m ${secs.remainder(60)}s';
+    for (final s in sessions.where((s) => s.endAt != null)) {
+      final DateTime end = s.endAt ?? DateTime.now(); // <-- non-null ici
+      final dur = db.effectiveMinutes(s);
       tiles.add(
-        Column(
-          children: [
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.check_circle_outline),
-              title: Text(range),
-              subtitle: Text('Durée: $dur'),
-            ),
-            const Divider(height: 1),
-          ],
+        ListTile(
+          leading:
+          const Icon(Icons.check_circle, color: Colors.green, size: 20),
+          title: Text('Du ${fmt.format(s.startAt)} au ${fmt.format(end)}'),
+          subtitle: Text('Durée: ${dur}m'),
         ),
       );
+      tiles.add(const Divider(height: 1));
     }
 
     return Material(

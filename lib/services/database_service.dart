@@ -5,9 +5,8 @@ import '../models/activity.dart';
 import '../models/session.dart';
 import '../models/pause.dart';
 
-/// Service en mémoire (ChangeNotifier) qui gère activités, sessions et pauses.
 class DatabaseService extends ChangeNotifier {
-  // ------------------ Activités ------------------
+  // ---------- Activités ----------
   final List<Activity> _activities = <Activity>[];
   List<Activity> get activities => UnmodifiableListView(_activities);
 
@@ -36,7 +35,6 @@ class DatabaseService extends ChangeNotifier {
     return a;
   }
 
-  /// Mise à jour d’une activité existante
   Activity updateActivity(Activity updated) {
     final i = _activities.indexWhere((x) => x.id == updated.id);
     if (i >= 0) {
@@ -46,22 +44,19 @@ class DatabaseService extends ChangeNotifier {
     return updated;
   }
 
-  // ------------------ Sessions / Pauses ------------------
+  // ---------- Sessions / Pauses ----------
   final Map<String, List<Session>> _sessionsByActivity = {};
   final Map<String, List<Pause>> _pausesBySession = {};
 
-  // Exposition lecture seule (utilisé par certains widgets)
   Map<String, List<Session>> get sessions =>
       UnmodifiableMapView(_sessionsByActivity);
   Map<String, List<Pause>> get pauses =>
       UnmodifiableMapView(_pausesBySession);
 
-  // Session courante par activité
   final Map<String, Session> _currentByActivity = {};
-  // Pause courante par session
   final Map<String, Pause> _currentPauseBySession = {};
 
-  // --- Helpers d’accès (compat avec ancien code)
+  // Aliases attendus par l'ancien code
   List<Session> getSessionsByActivity(String activityId) =>
       UnmodifiableListView(_sessionsByActivity[activityId] ?? const []);
   List<Session> listSessionsByActivity(String activityId) =>
@@ -83,11 +78,9 @@ class DatabaseService extends ChangeNotifier {
     return p?.endAt == null;
   }
 
-  /// Début de la session courante (ou null)
   DateTime? currentSessionStart(String activityId) =>
       _currentByActivity[activityId]?.startAt;
 
-  /// Durée effective écoulée de la session courante (maintenant - pauses)
   Duration runningElapsed(String activityId) {
     final s = _currentByActivity[activityId];
     if (s == null) return Duration.zero;
@@ -101,7 +94,7 @@ class DatabaseService extends ChangeNotifier {
     return end.difference(s.startAt) - paused;
   }
 
-  // ------------------ Actions rapides ------------------
+  // ---------- Actions rapides ----------
   void quickStart(String activityId) {
     if (_currentByActivity[activityId] != null) return;
     final s = Session(
@@ -119,9 +112,9 @@ class DatabaseService extends ChangeNotifier {
     final s = _currentByActivity[activityId];
     if (s == null) return;
 
-    final currentPause = _currentPauseBySession[s.id];
-    if (currentPause == null || currentPause.endAt != null) {
-      // start pause
+    final current = _currentPauseBySession[s.id];
+    if (current == null || current.endAt != null) {
+      // démarrer une pause
       final p = Pause(
         id: 'p_${DateTime.now().microsecondsSinceEpoch}',
         sessionId: s.id,
@@ -131,8 +124,16 @@ class DatabaseService extends ChangeNotifier {
       (_pausesBySession[s.id] ??= []).add(p);
       _currentPauseBySession[s.id] = p;
     } else {
-      // end pause
-      currentPause.endAt = DateTime.now();
+      // terminer la pause -> remplacer l'objet (champs final)
+      final ended = Pause(
+        id: current.id,
+        sessionId: current.sessionId,
+        startAt: current.startAt,
+        endAt: DateTime.now(),
+      );
+      final list = _pausesBySession[s.id]!;
+      final idx = list.indexWhere((x) => x.id == current.id);
+      if (idx >= 0) list[idx] = ended;
       _currentPauseBySession.remove(s.id);
     }
     notifyListeners();
@@ -142,17 +143,37 @@ class DatabaseService extends ChangeNotifier {
     final s = _currentByActivity[activityId];
     if (s == null) return;
 
-    final p = _currentPauseBySession[s.id];
-    if (p != null && p.endAt == null) {
-      p.endAt = DateTime.now();
+    // clôturer une pause en cours
+    final current = _currentPauseBySession[s.id];
+    if (current != null && current.endAt == null) {
+      final endedPause = Pause(
+        id: current.id,
+        sessionId: current.sessionId,
+        startAt: current.startAt,
+        endAt: DateTime.now(),
+      );
+      final pList = _pausesBySession[s.id]!;
+      final pIdx = pList.indexWhere((x) => x.id == current.id);
+      if (pIdx >= 0) pList[pIdx] = endedPause;
       _currentPauseBySession.remove(s.id);
     }
-    s.endAt = DateTime.now();
+
+    // clôturer la session -> remplacer l'objet (champs final)
+    final ended = Session(
+      id: s.id,
+      activityId: s.activityId,
+      startAt: s.startAt,
+      endAt: DateTime.now(),
+    );
+    final list = _sessionsByActivity[activityId]!;
+    final idx = list.indexWhere((x) => x.id == s.id);
+    if (idx >= 0) list[idx] = ended;
+
     _currentByActivity.remove(activityId);
     notifyListeners();
   }
 
-  // ------------------ Aide stats ------------------
+  // ---------- Aide stats ----------
   int effectiveMinutes(Session s) {
     final end = s.endAt ?? DateTime.now();
     var paused = Duration.zero;
