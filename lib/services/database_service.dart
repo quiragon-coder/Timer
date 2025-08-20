@@ -1,4 +1,4 @@
-import 'dart:collection';
+﻿import 'dart:collection';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
@@ -184,5 +184,18 @@ class DatabaseService extends ChangeNotifier {
     final d = end.difference(s.startAt) - paused;
     final m = d.inMinutes;
     return m < 0 ? 0 : m;
+  }
+
+  Future<void> start(String activityId) async {
+    // Wrapper for widget compatibility
+    return quickStart(activityId);
+  }
+  Future<void> togglePause(String activityId) async {
+    // Wrapper for widget compatibility
+    return quickTogglePause(activityId);
+  }
+  Future<void> stop(String activityId) async {
+    // Wrapper for widget compatibility
+    return quickStop(activityId);
   }
 }
