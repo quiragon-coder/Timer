@@ -1,50 +1,55 @@
-import 'package:fl_chart/fl_chart.dart';
+﻿import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../models/stats.dart';
 
 class WeeklyBarsChart extends StatelessWidget {
-  final List<DailyStat> data;
-  const WeeklyBarsChart({super.key, required this.data});
+  final List<DailyStat> stats; // 7 elements
+  const WeeklyBarsChart({super.key, required this.stats});
 
   @override
   Widget build(BuildContext context) {
-    final df = DateFormat.E();
-    final groups = <BarChartGroupData>[];
-    for (int i = 0; i < data.length; i++) {
-      final d = data[i];
-      groups.add(BarChartGroupData(
-        x: i,
-        barRods: [BarChartRodData(toY: d.minutes.toDouble(), width: 14, borderRadius: BorderRadius.circular(4))],
-        showingTooltipIndicators: const [0],
-      ));
-    }
+    final maxVal = (stats.map((d) => d.minutes).fold<int>(0, (a, b) => a > b ? a : b)).clamp(1, 9999);
+    final df = DateFormat.E(Localizations.localeOf(context).languageCode);
 
-    return SizedBox(
-      height: 200,
-      child: BarChart(
-        BarChartData(
-          barGroups: groups,
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 36)),
-            bottomTitles: AxisTitles(sideTitles: SideTitles(
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        borderData: FlBorderData(show: false),
+        gridData: FlGridData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
               showTitles: true,
-              getTitlesWidget: (value, meta) {
-                final i = value.toInt();
-                if (i < 0 || i >= data.length) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(df.format(data[i].day), style: const TextStyle(fontSize: 10)),
-                );
+              reservedSize: 18,
+              getTitlesWidget: (val, meta) {
+                final i = val.toInt();
+                if (i < 0 || i >= stats.length) return const SizedBox.shrink();
+                final label = df.format(stats[i].day);
+                return Text(label, style: const TextStyle(fontSize: 10));
               },
-            )),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            ),
           ),
-          barTouchData: BarTouchData(enabled: true),
         ),
+        barGroups: [
+          for (int i = 0; i < stats.length; i++)
+            BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: stats[i].minutes.toDouble(),
+                  width: 18,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ],
+            ),
+        ],
+        maxY: maxVal.toDouble() * 1.2,
       ),
     );
   }

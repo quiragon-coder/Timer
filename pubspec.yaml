@@ -1,4 +1,4 @@
-name: habits_timer
+﻿name: habits_timer
 description: A simple multi-platform habits timer built with Flutter + Riverpod.
 publish_to: "none"
 version: 0.1.0+1
@@ -20,3 +20,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fl_chart: ^0.68.0
+  intl: ^0.19.0
+
