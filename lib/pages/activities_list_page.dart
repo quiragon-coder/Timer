@@ -1,3 +1,6 @@
+// lib/pages/activities_list_page.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,11 +10,6 @@ import '../providers_stats.dart';
 import '../widgets/activity_controls.dart';
 import 'create_activity_page.dart';
 import 'activity_detail_page.dart';
-
-// Ticker global : notifie 1 fois / seconde -> force un rebuild des widgets qui le watch
-final tickerProvider = StreamProvider<DateTime>(
-      (ref) => Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
-);
 
 class ActivitiesListPage extends ConsumerWidget {
   const ActivitiesListPage({super.key});
@@ -28,7 +26,7 @@ class ActivitiesListPage extends ConsumerWidget {
         data: (list) {
           if (list.isEmpty) {
             return const Center(
-              child: Text('Aucune activit\u00E9. Ajoute-en une \u2192'),
+              child: Text('Aucune activité. Ajoute-en une →'),
             );
           }
           return ListView.separated(
@@ -50,39 +48,58 @@ class ActivitiesListPage extends ConsumerWidget {
   }
 }
 
-class _ActivityTile extends ConsumerWidget {
+class _ActivityTile extends ConsumerStatefulWidget {
   final Activity a;
   const _ActivityTile({required this.a});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Tick chaque seconde pour rafraîchir le badge mm:ss
-    ref.watch(tickerProvider);
+  ConsumerState<_ActivityTile> createState() => _ActivityTileState();
+}
 
+class _ActivityTileState extends ConsumerState<_ActivityTile> {
+  Timer? _ticker;
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  void _syncTicker(bool running) {
+    final active = _ticker?.isActive ?? false;
+    if (running && !active) {
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!running && active) {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
-    final running = db.isRunning(a.id);
-    final paused = db.isPaused(a.id);
+    final running = db.isRunning(widget.a.id);
+    final paused = db.isPaused(widget.a.id);
+    _syncTicker(running);
 
     // Totaux pour les chips
-    final weekTotalAsync = ref.watch(weekTotalProvider(a.id));
-    final monthTotalAsync = ref.watch(monthTotalProvider(a.id));
-    final yearTotalAsync = ref.watch(yearTotalProvider(a.id));
+    final weekTotalAsync  = ref.watch(weekTotalProvider(widget.a.id));
+    final monthTotalAsync = ref.watch(monthTotalProvider(widget.a.id));
+    final yearTotalAsync  = ref.watch(yearTotalProvider(widget.a.id));
 
     // minutes today -> pour objectif journalier
-    final todayAsync = ref.watch(statsTodayProvider(a.id));
+    final todayAsync = ref.watch(statsTodayProvider(widget.a.id));
 
-    final elapsed = db.runningElapsed(a.id);
+    final elapsed = db.runningElapsed(widget.a.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      leading: Text(a.emoji, style: const TextStyle(fontSize: 24)),
-      title: Text(
-        a.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      leading: Text(widget.a.emoji, style: const TextStyle(fontSize: 24)),
+      title: Text(widget.a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -92,15 +109,12 @@ class _ActivityTile extends ConsumerWidget {
               Container(
                 width: 10,
                 height: 10,
-                decoration: BoxDecoration(
-                  color: a.color,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Objectif: ${a.dailyGoalMinutes ?? 0} min/j',
+                  "Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j",
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -108,25 +122,16 @@ class _ActivityTile extends ConsumerWidget {
               const SizedBox(width: 8),
               if (running)
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: (paused
-                        ? Colors.orange.withOpacity(.15)
-                        : Colors.green.withOpacity(.15)),
+                    color: (paused ? Colors.orange : Colors.green).withOpacity(.15),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        paused ? Icons.pause : Icons.timer_outlined,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 4),
-                      Text('$mm:$ss'),
-                    ],
-                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
+                    const SizedBox(width: 4),
+                    Text("$mm:$ss"),
+                  ]),
                 ),
             ],
           ),
@@ -138,24 +143,18 @@ class _ActivityTile extends ConsumerWidget {
             loading: () => const SizedBox.shrink(),
             error: (e, _) => const SizedBox.shrink(),
             data: (today) {
-              final goal = a.dailyGoalMinutes ?? 0;
+              final goal = widget.a.dailyGoalMinutes ?? 0;
               if (goal <= 0) return const SizedBox.shrink();
               if (today >= goal) {
-                return Row(
-                  children: const [
-                    Icon(Icons.check_circle, size: 16, color: Colors.green),
-                    SizedBox(width: 6),
-                    Text(
-                      'Objectif du jour atteint',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                );
+                return Row(children: const [
+                  Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  SizedBox(width: 6),
+                  Text("Objectif du jour atteint", maxLines: 1, overflow: TextOverflow.ellipsis),
+                ]);
               } else {
                 final remain = goal - today;
                 return Text(
-                  'Reste $remain min aujourd\'hui',
+                  "Reste $remain min aujourd'hui",
                   style: Theme.of(context).textTheme.bodySmall,
                 );
               }
@@ -164,51 +163,36 @@ class _ActivityTile extends ConsumerWidget {
 
           const SizedBox(height: 6),
 
-          // Ligne 2: chips Semaine / Mois / Ann.
+          // Ligne 2: chips Semaine / Mois / Année (verts si atteint)
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              if ((a.weeklyGoalMinutes ?? 0) > 0)
-                _GoalChip(
-                  async: weekTotalAsync,
-                  icon: Icons.calendar_view_week,
-                  label: 'Sem.',
-                  goal: a.weeklyGoalMinutes,
-                ),
-              if ((a.monthlyGoalMinutes ?? 0) > 0)
-                _GoalChip(
-                  async: monthTotalAsync,
-                  icon: Icons.calendar_view_month,
-                  label: 'Mois',
-                  goal: a.monthlyGoalMinutes,
-                ),
-              if ((a.yearlyGoalMinutes ?? 0) > 0)
-                _GoalChip(
-                  async: yearTotalAsync,
-                  icon: Icons.calendar_month,
-                  label: 'Ann.',
-                  goal: a.yearlyGoalMinutes,
-                ),
+              if ((widget.a.weeklyGoalMinutes ?? 0) > 0)
+                _GoalChip(async: weekTotalAsync, icon: Icons.calendar_view_week, label: "Sem.",
+                    goal: widget.a.weeklyGoalMinutes),
+              if ((widget.a.monthlyGoalMinutes ?? 0) > 0)
+                _GoalChip(async: monthTotalAsync, icon: Icons.calendar_view_month, label: "Mois",
+                    goal: widget.a.monthlyGoalMinutes),
+              if ((widget.a.yearlyGoalMinutes ?? 0) > 0)
+                _GoalChip(async: yearTotalAsync, icon: Icons.calendar_month, label: "Ann.",
+                    goal: widget.a.yearlyGoalMinutes),
             ],
           ),
 
           const SizedBox(height: 8),
-
           OverflowBar(
             alignment: MainAxisAlignment.start,
             spacing: 8,
             overflowSpacing: 8,
             children: [
-              ActivityControls(activityId: a.id, compact: true),
+              ActivityControls(activityId: widget.a.id, compact: true),
             ],
           ),
         ],
       ),
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ActivityDetailPage(activity: a),
-        ),
+        MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: widget.a)),
       ),
     );
   }
@@ -236,12 +220,8 @@ class _GoalChip extends StatelessWidget {
         final g = goal ?? 0;
         final reached = g > 0 && m >= g;
         return Chip(
-          avatar: Icon(
-            icon,
-            size: 16,
-            color: reached ? Colors.green : null,
-          ),
-          label: Text(g > 0 ? '$label: $m / $g' : '$label: $m'),
+          avatar: Icon(icon, size: 16, color: reached ? Colors.green : null),
+          label: Text(g > 0 ? "$label: $m / $g" : "$label: $m"),
           backgroundColor: reached ? Colors.green.withOpacity(.12) : null,
           side: reached ? const BorderSide(color: Colors.green) : null,
         );
