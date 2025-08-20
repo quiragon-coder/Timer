@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
 import '../providers.dart';
+import '../services/database_service.dart';
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
 
@@ -36,10 +37,10 @@ class ActivityDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Quand DatabaseService notifie, ce build est rappelé automatiquement
+    // Rebuild auto quand DatabaseService notifie
     final db = ref.watch(dbProvider);
 
-    // On récupère l’instance la plus récente de l’activité
+    // Utilise la version la plus a jour de l'activite
     final current = db.activityById(activity.id) ?? activity;
 
     final running = db.isRunning(current.id);
@@ -102,11 +103,10 @@ class ActivityDetailPage extends ConsumerWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Padding(
-              padding: EdgeInsets.all(12.0),
-              // IMPORTANT: votre widget attend probablement activityId: ...
-              // (vos erreurs indiquaient "named parameter 'activity' isn't defined")
-              child: ActivityStatsPanel(activityId: ''), // placeholder remplacé juste après
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              // IMPORTANT: ActivityStatsPanel prend activityId:
+              child: ActivityStatsPanel(activityId: current.id),
             ),
           ),
         ],
@@ -114,13 +114,9 @@ class ActivityDetailPage extends ConsumerWidget {
     );
   }
 
-  // Petite astuce: on remplace le placeholder via un Builder, pour passer l'id.
-  // (alternativement: mettez directement ActivityStatsPanel(activityId: current.id))
-  Widget _statsPanel(String activityId) {
-    return ActivityStatsPanel(activityId: activityId);
-  }
-
-  Widget _buildHistory(BuildContext context, DatabaseService db, String activityId) {
+  // <-- ICI on a bien le type DatabaseService, avec l'import en haut
+  Widget _buildHistory(
+      BuildContext context, DatabaseService db, String activityId) {
     final sessions = db.listSessionsByActivity(activityId);
     if (sessions.isEmpty) {
       return Padding(
