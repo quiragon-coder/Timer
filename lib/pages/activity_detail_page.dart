@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,7 +54,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: AppBar(actions: [IconButton(icon: const Icon(Icons.grid_on), onPressed: () { Navigator.of(context).push(MaterialPageRoute(builder: (_) => ActivityHeatmapPage(activityId: widget.activity.id, name: widget.activity.name, color: widget.activity.color))); })], 
         title: Row(
           children: [
             Text(widget.activity.emoji, style: const TextStyle(fontSize: 22)),
@@ -192,3 +192,4 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     );
   }
 }
+
