@@ -1,12 +1,11 @@
-// lib/pages/activity_detail_page.dart
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../models/activity.dart';
 import '../models/session.dart';
-import '../models/pause.dart';
-import '../services/database_service.dart';
 import '../providers.dart';
 import '../providers_stats.dart';
 import '../widgets/activity_controls.dart';
@@ -14,6 +13,7 @@ import '../widgets/activity_stats_panel.dart';
 
 class ActivityDetailPage extends ConsumerStatefulWidget {
   final Activity activity;
+
   const ActivityDetailPage({super.key, required this.activity});
 
   @override
@@ -21,37 +21,13 @@ class ActivityDetailPage extends ConsumerStatefulWidget {
 }
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
+  late Activity _current;
   Timer? _ticker;
 
-  // Démarre/arrête le ticker du badge
-  void _syncTicker(bool running) {
-    final active = _ticker?.isActive ?? false;
-    if (running && !active) {
-      _ticker = Timer.periodic(
-        const Duration(seconds: 1),
-            (_) {
-          if (mounted) setState(() {});
-        },
-      );
-    } else if (!running && active) {
-      _ticker?.cancel();
-      _ticker = null;
-    }
-  }
-
-  // Invalide les providers de stats pour forcer l'UI à se rafraîchir
-  void _refreshStats() {
-    final id = widget.activity.id;
-    // chips
-    ref.invalidate(statsTodayProvider(id));
-    ref.invalidate(weekTotalProvider(id));
-    ref.invalidate(monthTotalProvider(id));
-    ref.invalidate(yearTotalProvider(id));
-    // graphes
-    ref.invalidate(hourlyTodayProvider(id));
-    ref.invalidate(statsLast7DaysProvider(id));
-    // liste / badges éventuels
-    ref.invalidate(activitiesProvider);
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.activity;
   }
 
   @override
@@ -60,17 +36,38 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     super.dispose();
   }
 
+  void _syncTicker(bool running) {
+    final active = _ticker?.isActive ?? false;
+    if (running && !active) {
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!running && active) {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
-    final a = widget.activity;
-    final id = a.id;
 
-    final running = db.isRunning(id);
-    final paused  = db.isPaused(id);
+    // si l’activité a changé en base (nom/couleur/goal…), on la rafraîchit
+    final all = ref.watch(activitiesProvider).maybeWhen(
+      data: (list) => list,
+      orElse: () => <Activity>[],
+    );
+    final updated = all.firstWhere(
+          (a) => a.id == _current.id,
+      orElse: () => _current,
+    );
+    _current = updated;
+
+    final running = db.isRunning(_current.id);
+    final paused = db.isPaused(_current.id);
     _syncTicker(running);
 
-    final elapsed = db.runningElapsed(id);
+    final elapsed = db.runningElapsed(_current.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
@@ -78,192 +75,147 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            Text(a.emoji, style: const TextStyle(fontSize: 20)),
+            Text(_current.emoji, style: const TextStyle(fontSize: 20)),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(a.name, overflow: TextOverflow.ellipsis),
-            ),
-          ],
-        ),
-        actions: [
-          if (running)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color:
-                  (paused ? Colors.orange : Colors.green).withOpacity(.15),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      paused ? Icons.pause : Icons.timer_outlined,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    Text("$mm:$ss"),
-                  ],
-                ),
+              child: Text(
+                _current.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-        ],
+            // badge ⏱ en haut à droite (live)
+            if (running)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: (paused ? Colors.orange : Colors.green)
+                      .withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(
+                    paused ? Icons.pause_circle_filled : Icons.timer_outlined,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text('$mm:$ss'),
+                ]),
+              ),
+          ],
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // En-tête
+          // En-tête (pastille couleur + objectifs + commandes)
           Row(
             children: [
-              Text(a.emoji, style: const TextStyle(fontSize: 24)),
-              const SizedBox(width: 10),
-              Text("Objectif: ${a.dailyGoalMinutes ?? 0} min/j"),
+              Text(_current.emoji, style: const TextStyle(fontSize: 28)),
+              const SizedBox(width: 12),
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: _current.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Objectif: ${_current.dailyGoalMinutes ?? 0} min/j",
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
-
-          // Commandes
-          Row(
+          OverflowBar(
+            alignment: MainAxisAlignment.start,
+            spacing: 8,
+            overflowSpacing: 8,
             children: [
-              FilledButton.icon(
-                onPressed: running
-                    ? null
-                    : () async {
-                  await db.quickStart(id);
-                  if (mounted) setState(() {});
-                  _refreshStats();
-                },
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Démarrer'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: running
-                    ? () async {
-                  await db.quickTogglePause(id);
-                  if (mounted) setState(() {});
-                  _refreshStats();
-                }
-                    : null,
-                icon: Icon(paused ? Icons.play_arrow : Icons.pause),
-                label: Text(paused ? 'Reprendre' : 'Mettre en pause'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: running
-                    ? () async {
-                  await db.quickStop(id);
-                  if (mounted) setState(() {});
-                  _refreshStats();
-                }
-                    : null,
-                icon: const Icon(Icons.stop),
-                label: const Text('Arrêter'),
-              ),
+              ActivityControls(activityId: _current.id, compact: false),
             ],
           ),
-
           const SizedBox(height: 24),
-          Text('Historique', style: Theme.of(context).textTheme.headlineSmall),
+
+          // Historique
+          Text("Historique", style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
-          _buildHistory(context, db, id),
-
+          _buildHistory(context, db, _current.id),
           const SizedBox(height: 24),
-          // Panneau Stats (chips + graphes)
-          ActivityStatsPanel(activityId: id),
+
+          // Stats (aujourd’hui + 7 jours + répartition horaire)
+          ActivityStatsPanel(activityId: _current.id),
         ],
       ),
     );
   }
 
-  // ---------- Historique ----------
-
   Widget _buildHistory(
       BuildContext context, DatabaseService db, String activityId) {
-    // Récupère toutes les sessions de cette activité
-    final List<Session> sessions = db.sessions
-        .where((s) => s.activityId == activityId)
-        .toList()
-      ..sort((a, b) => b.startAt.compareTo(a.startAt)); // récentes d'abord
+    // **IMPORTANT** : on utilise les méthodes existantes du service,
+    // pas des getters inexistants (db.sessions / db.pauses).
+    final List<Session> sessions = db.listSessionsByActivity(activityId);
 
-    // Cherche une session en cours (endAt == null)
-    Session? current;
-    for (final s in sessions) {
-      if (s.endAt == null) {
-        current = s;
-        break;
-      }
+    // tri par date (les plus récentes en premier)
+    sessions.sort((a, b) {
+      final da = a.endAt ?? DateTime.now();
+      final dbb = b.endAt ?? DateTime.now();
+      return dbb.compareTo(da);
+    });
+
+    if (sessions.isEmpty) {
+      return ListTile(
+        leading: const Icon(Icons.play_circle_outline),
+        title: const Text("Aucune session"),
+        subtitle: Text(
+          "Commence une session avec le bouton Démarrer.",
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      );
     }
 
-    if (sessions.isEmpty && current == null) {
-      return Text("Aucune session",
-          style: Theme.of(context).textTheme.bodyMedium);
-    }
+    final fmt = DateFormat("dd/MM HH:mm");
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (current != null)
+        for (final s in sessions) ...[
           ListTile(
-            leading: const Icon(Icons.play_arrow),
-            title: const Text('En cours'),
-            subtitle:
-            Text("${_fmt(current.startAt)} • en cours"),
+            leading: Icon(
+              s.endAt == null ? Icons.play_arrow : Icons.check_circle,
+              color: s.endAt == null ? Colors.amber : Colors.green,
+            ),
+            title: s.endAt == null
+                ? const Text("En cours")
+                : Text("Du ${fmt.format(s.startAt)} au ${fmt.format(s.endAt!)}"),
+            subtitle: Text(
+              s.endAt == null
+                  ? "${fmt.format(s.startAt)} • en cours"
+                  : "Durée: ${_formatDuration(s.endAt!.difference(s.startAt))}",
+            ),
           ),
-        for (final s in sessions.where((e) => e.endAt != null))
-          _SessionTile(session: s, pauses: db.pauses),
+          const Divider(height: 1),
+        ]
       ],
     );
   }
 
-  String _fmt(DateTime dt) {
-    // petit format maison pour éviter les soucis d'intl sur le web
-    final d2 =
-        "${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}";
-    final h2 =
-        "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-    return "$d2 $h2";
-  }
-}
-
-class _SessionTile extends StatelessWidget {
-  final Session session;
-  final List<Pause> pauses;
-
-  const _SessionTile({required this.session, required this.pauses});
-
-  Duration _effectiveDuration() {
-    final end = session.endAt ?? DateTime.now();
-    var dur = end.difference(session.startAt);
-
-    final pz = pauses.where((p) => p.sessionId == session.id);
-    for (final p in pz) {
-      final pend = p.endAt ?? DateTime.now();
-      dur -= pend.difference(p.startAt);
+  String _formatDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    if (h > 0) {
+      return "${h}h ${m.toString().padLeft(2, '0')}m";
     }
-    return dur;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final d = _effectiveDuration();
-    final mins = d.inMinutes;
-    final secs = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-
-    String fmt(DateTime dt) {
-      final d2 =
-          "${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}";
-      final h2 =
-          "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-      return "$d2 $h2";
-    }
-
-    return ListTile(
-      leading: const Icon(Icons.check_circle),
-      title: Text("Du ${fmt(session.startAt)} au ${fmt(session.endAt!)}"),
-      subtitle: Text("Durée: ${mins}m ${secs}s"),
-    );
+    return "${m}m ${s.toString().padLeft(2, '0')}s";
+    // si tu préfères mm:ss :
+    // final mm = d.inMinutes.toString().padLeft(2, '0');
+    // final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    // return "$mm:$ss";
   }
 }
