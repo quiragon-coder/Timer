@@ -1,53 +1,86 @@
-import 'package:fl_chart/fl_chart.dart';
+﻿import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import '../models/stats.dart';
 
+/// Chart horaire 0→23 h.
+/// On accepte une liste de *buckets* dynamiques avec champs `hour` et `minutes`.
+/// (Ça évite ton erreur “HourlyBucket n’est pas un type” si la classe n’est
+/// pas visible dans ce fichier.)
 class HourlyBarsChart extends StatelessWidget {
-  final List<HourlyBucket> buckets;
+  final List<dynamic> buckets; // chaque élément doit exposer .hour et .minutes
   const HourlyBarsChart({super.key, required this.buckets});
+
+  int _minutesAt(int h) {
+    for (final b in buckets) {
+      final bh = (b as dynamic).hour as int?;
+      if (bh == h) {
+        final m = (b as dynamic).minutes as int?;
+        return m ?? 0;
+      }
+    }
+    return 0;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final maxVal = (buckets.map((b) => b.minutes).fold<int>(0, (a, b) => a > b ? a : b)).clamp(1, 9999);
+    final theme = Theme.of(context);
 
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceBetween,
-        borderData: FlBorderData(show: false),
-        gridData: FlGridData(show: false),
-        titlesData: FlTitlesData(
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 18,
-              getTitlesWidget: (val, meta) {
-                final h = val.toInt();
-                if ({0, 6, 12, 18, 23}.contains(h)) {
-                  return Text('$h', style: const TextStyle(fontSize: 10));
-                }
-                return const SizedBox.shrink();
-              },
+    return SizedBox(
+      height: 220,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: BarChart(
+          BarChartData(
+            gridData: FlGridData(show: true, horizontalInterval: 10),
+            borderData: FlBorderData(show: false),
+            alignment: BarChartAlignment.spaceBetween,
+            titlesData: FlTitlesData(
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 32,
+                  getTitlesWidget: (value, _) => Text(
+                    value.toInt().toString(),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  getTitlesWidget: (value, _) {
+                    final v = value.toInt();
+                    if (v == 0 || v == 6 || v == 12 || v == 18 || v == 23) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text('$v', style: theme.textTheme.bodySmall),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ),
             ),
+            barGroups: List.generate(24, (h) {
+              final minutes = _minutesAt(h).toDouble();
+              return BarChartGroupData(
+                x: h,
+                barRods: [
+                  BarChartRodData(
+                    toY: minutes,
+                    width: 8,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                  ),
+                ],
+              );
+            }),
           ),
         ),
-        barGroups: [
-          for (final b in buckets)
-            BarChartGroupData(
-              x: b.hour,
-              barRods: [
-                BarChartRodData(
-                  toY: b.minutes.toDouble(),
-                  width: 6,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ],
-            ),
-        ],
-        maxY: maxVal.toDouble() * 1.2,
       ),
     );
   }
