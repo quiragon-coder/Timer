@@ -13,6 +13,11 @@ class DatabaseService extends ChangeNotifier {
   final List<Session> _sessions = <Session>[];
   final List<Pause> _pauses = <Pause>[];
 
+  // Exposition en lecture (synchrone) pour l’UI
+  List<Activity> get activities =>
+      _activities.values.toList(growable: false);
+  Activity? activityById(String id) => _activities[id];
+
   // ------- Helpers -------
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
@@ -38,7 +43,6 @@ class DatabaseService extends ChangeNotifier {
   }
 
   // ------- Activities -------
-  /// Crée une activité à partir des champs du formulaire.
   Future<Activity> createActivity({
     required String name,
     required String emoji,
@@ -64,17 +68,15 @@ class DatabaseService extends ChangeNotifier {
     return a;
   }
 
-  /// Liste actuelle des activités (utilisée par activitiesProvider).
   Future<List<Activity>> getActivities() async =>
       _activities.values.toList(growable: false);
 
-  /// Met à jour une activité existante (nom, emoji, couleur, objectifs…)
   void updateActivity(Activity updated) {
     _activities[updated.id] = updated;
     notifyListeners();
   }
 
-  // ------- Sessions (Start / Pause / Resume / Stop) -------
+  // ------- Sessions -------
   Future<void> quickStart(String activityId) async {
     if (_currentSession(activityId) != null) return; // déjà en cours
     _sessions.add(
@@ -94,13 +96,11 @@ class DatabaseService extends ChangeNotifier {
 
     final open = _openPause(current.id);
     if (open != null) {
-      // Reprise: on ferme la pause (objets immuables -> copyWith)
       final idx = _pauses.indexWhere((p) => p.id == open.id);
       if (idx >= 0) {
         _pauses[idx] = open.copyWith(endAt: DateTime.now());
       }
     } else {
-      // Mise en pause: on ouvre une nouvelle pause
       _pauses.add(
         Pause(
           id: _newId(),
@@ -117,7 +117,6 @@ class DatabaseService extends ChangeNotifier {
     final current = _currentSession(activityId);
     if (current == null) return;
 
-    // Ferme une pause ouverte si besoin
     final open = _openPause(current.id);
     if (open != null) {
       final pIdx = _pauses.indexWhere((p) => p.id == open.id);
@@ -126,7 +125,6 @@ class DatabaseService extends ChangeNotifier {
       }
     }
 
-    // Clôture la session (objets immuables -> copyWith)
     final sIdx = _sessions.indexWhere((s) => s.id == current.id);
     if (sIdx >= 0) {
       _sessions[sIdx] = current.copyWith(endAt: DateTime.now());
@@ -134,10 +132,10 @@ class DatabaseService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ------- Queries (synchro pour l’UI) -------
+  // ------- Queries -------
   List<Session> listSessionsByActivity(String activityId) {
     final all = _sessionsForActivity(activityId);
-    all.sort((a, b) => b.startAt.compareTo(a.startAt)); // récentes d’abord
+    all.sort((a, b) => b.startAt.compareTo(a.startAt));
     return UnmodifiableListView(all);
   }
 
@@ -155,12 +153,10 @@ class DatabaseService extends ChangeNotifier {
     return _openPause(s.id) != null;
   }
 
-  /// Temps écoulé pour la session en cours (hors pauses)
   Duration runningElapsed(String activityId) {
     final s = _currentSession(activityId);
     if (s == null) return Duration.zero;
 
-    // si en pause, on ne compte pas le temps depuis le début de la pause
     final pause = _openPause(s.id);
     final end = pause != null ? pause.startAt : DateTime.now();
     return end.difference(s.startAt) - _pausedAccumulated(s.id, until: end);
@@ -180,7 +176,7 @@ class DatabaseService extends ChangeNotifier {
     return total.isNegative ? Duration.zero : total;
   }
 
-  // ------- Compat (APIs async attendues par StatsService) -------
+  // ------- Compat async -------
   Future<List<Session>> getSessionsByActivity(String activityId) async =>
       listSessionsByActivity(activityId);
 
