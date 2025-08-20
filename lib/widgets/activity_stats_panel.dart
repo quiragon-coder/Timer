@@ -7,12 +7,18 @@ import "weekly_bars_chart.dart";
 
 class ActivityStatsPanel extends ConsumerWidget {
   final String activityId;
-  final int? dailyGoal; // minutes
+  final int? dailyGoal;
+  final int? weeklyGoal;
+  final int? monthlyGoal;
+  final int? yearlyGoal;
 
   const ActivityStatsPanel({
     super.key,
     required this.activityId,
     this.dailyGoal,
+    this.weeklyGoal,
+    this.monthlyGoal,
+    this.yearlyGoal,
   });
 
   @override
@@ -21,7 +27,6 @@ class ActivityStatsPanel extends ConsumerWidget {
     final weekAsync = ref.watch(statsLast7DaysProvider(activityId));
     final hourlyAsync = ref.watch(hourlyTodayProvider(activityId));
 
-    // nouveaux totaux
     final weekTotalAsync  = ref.watch(weekTotalProvider(activityId));
     final monthTotalAsync = ref.watch(monthTotalProvider(activityId));
     final yearTotalAsync  = ref.watch(yearTotalProvider(activityId));
@@ -37,7 +42,7 @@ class ActivityStatsPanel extends ConsumerWidget {
             Text("Stats", style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
 
-            // --- Minutes du jour + objectif ---
+            // Aujourd'hui + progression
             todayAsync.when(
               loading: () => const _Skeleton(height: 16),
               error: (e, _) => Text("Erreur: $e"),
@@ -58,8 +63,11 @@ class ActivityStatsPanel extends ConsumerWidget {
                         ),
                         if (goal > 0)
                           Chip(
-                            avatar: Icon(reached ? Icons.check_circle : Icons.flag,
-                                size: 18, color: reached ? Colors.green : null),
+                            avatar: Icon(
+                              reached ? Icons.check_circle : Icons.flag,
+                              size: 18,
+                              color: reached ? Colors.green : null,
+                            ),
                             label: Text(reached ? "Objectif atteint" : "Objectif: $goal min"),
                           ),
                       ],
@@ -71,7 +79,7 @@ class ActivityStatsPanel extends ConsumerWidget {
                         child: LinearProgressIndicator(
                           minHeight: 10,
                           value: ratio,
-                          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+                          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -86,13 +94,22 @@ class ActivityStatsPanel extends ConsumerWidget {
             ),
 
             const SizedBox(height: 16),
-            // --- Totaux Week / Month / Year ---
+            // Totaux Semaine / Mois / AnnÃ©e (colorÃ©s si objectif atteint)
             Wrap(
               spacing: 8, runSpacing: 8,
               children: [
-                _TotalChip(async: weekTotalAsync, icon: Icons.calendar_view_week, label: "Semaine"),
-                _TotalChip(async: monthTotalAsync, icon: Icons.calendar_view_month, label: "Mois"),
-                _TotalChip(async: yearTotalAsync, icon: Icons.calendar_month, label: "AnnÃ©e"),
+                _GoalTotalChip(
+                  async: weekTotalAsync, icon: Icons.calendar_view_week, label: "Semaine",
+                  goal: weeklyGoal,
+                ),
+                _GoalTotalChip(
+                  async: monthTotalAsync, icon: Icons.calendar_view_month, label: "Mois",
+                  goal: monthlyGoal,
+                ),
+                _GoalTotalChip(
+                  async: yearTotalAsync, icon: Icons.calendar_month, label: "AnnÃ©e",
+                  goal: yearlyGoal,
+                ),
               ],
             ),
 
@@ -126,21 +143,37 @@ class ActivityStatsPanel extends ConsumerWidget {
   }
 }
 
-class _TotalChip extends StatelessWidget {
+class _GoalTotalChip extends StatelessWidget {
   final AsyncValue<int> async;
   final IconData icon;
   final String label;
-  const _TotalChip({required this.async, required this.icon, required this.label});
+  final int? goal;
+
+  const _GoalTotalChip({
+    required this.async,
+    required this.icon,
+    required this.label,
+    required this.goal,
+  });
 
   @override
   Widget build(BuildContext context) {
     return async.when(
       loading: () => const Chip(label: Text("...")),
-      error: (e, _) => Chip(label: Text("Err")),
-      data: (m) => Chip(
-        avatar: Icon(icon, size: 18),
-        label: Text("$label: $m min"),
-      ),
+      error: (e, _) => const Chip(label: Text("Err")),
+      data: (m) {
+        final reached = (goal ?? 0) > 0 && m >= (goal ?? 0);
+        return Chip(
+          avatar: Icon(icon, size: 18, color: reached ? Colors.green : null),
+          label: Text(
+            goal != null && goal! > 0
+              ? "$label: $m / ${goal} min"
+              : "$label: $m min",
+          ),
+          backgroundColor: reached ? Colors.green.withOpacity(.12) : null,
+          side: reached ? const BorderSide(color: Colors.green) : null,
+        );
+      },
     );
   }
 }
@@ -153,7 +186,7 @@ class _Skeleton extends StatelessWidget {
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(.6),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(.6),
         borderRadius: BorderRadius.circular(8),
       ),
     );

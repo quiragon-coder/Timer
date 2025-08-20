@@ -1,13 +1,13 @@
-﻿import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+﻿import "dart:async";
+import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:intl/intl.dart";
 
-import '../models/activity.dart';
-import '../models/session.dart';
-import '../providers.dart';
-import '../widgets/activity_controls.dart';
-import '../widgets/activity_stats_panel.dart';
+import "../models/activity.dart";
+import "../models/session.dart";
+import "../providers.dart";
+import "../widgets/activity_controls.dart";
+import "../widgets/activity_stats_panel.dart";
 
 class ActivityDetailPage extends ConsumerStatefulWidget {
   final Activity activity;
@@ -18,7 +18,7 @@ class ActivityDetailPage extends ConsumerStatefulWidget {
 }
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
-  final _df = DateFormat('dd MMM HH:mm');
+  final _df = DateFormat("dd MMM HH:mm");
   Timer? _ticker;
 
   @override
@@ -39,6 +39,80 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     }
   }
 
+  Future<void> _openGoalsSheet(Activity a) async {
+    final dailyCtrl  = TextEditingController(text: a.dailyGoalMinutes?.toString()  ?? "");
+    final weeklyCtrl = TextEditingController(text: a.weeklyGoalMinutes?.toString() ?? "");
+    final monthCtrl  = TextEditingController(text: a.monthlyGoalMinutes?.toString()?? "");
+    final yearCtrl   = TextEditingController(text: a.yearlyGoalMinutes?.toString() ?? "");
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            top: 16, left: 16, right: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.flag_outlined),
+                  const SizedBox(width: 8),
+                  Text("Objectifs", style: Theme.of(ctx).textTheme.titleLarge),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx, false),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _NumField(label: "Objectif journalier (min)", controller: dailyCtrl),
+              const SizedBox(height: 8),
+              _NumField(label: "Objectif hebdo (min)", controller: weeklyCtrl),
+              const SizedBox(height: 8),
+              _NumField(label: "Objectif mensuel (min)", controller: monthCtrl),
+              const SizedBox(height: 8),
+              _NumField(label: "Objectif annuel (min)", controller: yearCtrl),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.save),
+                  label: const Text("Enregistrer"),
+                  onPressed: () {
+                    Navigator.pop(ctx, true);
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (saved == true) {
+      int? parseOrNull(String s) => s.trim().isEmpty ? null : int.tryParse(s.trim());
+
+      final updated = a.copyWith(
+        dailyGoalMinutes:  parseOrNull(dailyCtrl.text),
+        weeklyGoalMinutes: parseOrNull(weeklyCtrl.text),
+        monthlyGoalMinutes:parseOrNull(monthCtrl.text),
+        yearlyGoalMinutes: parseOrNull(yearCtrl.text),
+      );
+
+      final db = ref.read(dbProvider);
+      // On suppose que DatabaseService expose updateActivity(...)
+      db.updateActivity(updated);
+
+      if (mounted) setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
@@ -49,13 +123,14 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     _syncTicker(running);
 
     final elapsed = db.runningElapsed(widget.activity.id);
-    final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, "0");
+    final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, "0");
+
+    final a = widget.activity; // alias
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.activity.emoji} ${widget.activity.name}',
-            overflow: TextOverflow.ellipsis),
+        title: Text("${a.emoji} ${a.name}", overflow: TextOverflow.ellipsis),
         actions: [
           if (running)
             Padding(
@@ -72,19 +147,23 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                     children: [
                       Icon(paused ? Icons.pause : Icons.timer_outlined, size: 16),
                       const SizedBox(width: 4),
-                      Text('$mm:$ss'),
+                      Text("$mm:$ss"),
                     ],
                   ),
                 ),
               ),
             ),
+          IconButton(
+            tooltip: "Objectifs",
+            icon: const Icon(Icons.flag_outlined),
+            onPressed: () => _openGoalsSheet(a),
+          ),
         ],
       ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            // Header + boutons
             Card(
               elevation: 0,
               color: Theme.of(context).colorScheme.surface,
@@ -98,25 +177,21 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Text(widget.activity.emoji, style: const TextStyle(fontSize: 28)),
-                        Container(
-                          width: 12, height: 12,
-                          decoration: BoxDecoration(color: widget.activity.color, shape: BoxShape.circle),
-                        ),
+                        Text(a.emoji, style: const TextStyle(fontSize: 28)),
+                        Container(width: 12, height: 12,
+                          decoration: BoxDecoration(color: a.color, shape: BoxShape.circle)),
                         Text(
-                          'Objectif: ${widget.activity.dailyGoalMinutes ?? 0} min/j',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          "Objectif: ${a.dailyGoalMinutes ?? 0} min/j",
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                     const SizedBox(height: 10),
                     OverflowBar(
                       alignment: MainAxisAlignment.start,
-                      spacing: 8,
-                      overflowSpacing: 8,
+                      spacing: 8, overflowSpacing: 8,
                       children: [
-                        ActivityControls(activityId: widget.activity.id, compact: true),
+                        ActivityControls(activityId: a.id, compact: true),
                       ],
                     ),
                   ],
@@ -125,24 +200,22 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
             ),
 
             const SizedBox(height: 12),
-            Text('Historique', style: Theme.of(context).textTheme.titleLarge),
+            Text("Historique", style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             if (sessions.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('Aucune session pour le moment.'),
+                child: Text("Aucune session pour le moment."),
               )
             else
-              Column(
-                children: [
-                  for (final s in sessions) _SessionTile(df: _df, s: s),
-                ],
-              ),
+              Column(children: [ for (final s in sessions) _SessionTile(df: _df, s: s) ]),
 
-            // Panneau Stats
             ActivityStatsPanel(
-              activityId: widget.activity.id,
-              dailyGoal: widget.activity.dailyGoalMinutes,
+              activityId: a.id,
+              dailyGoal: a.dailyGoalMinutes,
+              weeklyGoal: a.weeklyGoalMinutes,
+              monthlyGoal: a.monthlyGoalMinutes,
+              yearlyGoal: a.yearlyGoalMinutes,
             ),
           ],
         ),
@@ -160,9 +233,9 @@ class _SessionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final end = s.endAt;
     final dur = s.duration;
-    final hh = dur.inHours.toString().padLeft(2, '0');
-    final mm = dur.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = dur.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final hh = dur.inHours.toString().padLeft(2, "0");
+    final mm = dur.inMinutes.remainder(60).toString().padLeft(2, "0");
+    final ss = dur.inSeconds.remainder(60).toString().padLeft(2, "0");
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -171,15 +244,31 @@ class _SessionTile extends StatelessWidget {
         color: end == null ? Colors.orange : Colors.green,
       ),
       title: Text(
-        end == null ? 'En cours' : 'Fini ($hh:$mm:$ss)',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        end == null ? "En cours" : "Fini ($hh:$mm:$ss)",
+        maxLines: 1, overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        // Flèche ASCII pour éviter l’UTF-8 exotique
-        '${df.format(s.startAt)} -> ${end == null ? 'en cours' : df.format(end)}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        "${df.format(s.startAt)} -> ${end == null ? "en cours" : df.format(end)}",
+        maxLines: 1, overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _NumField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  const _NumField({required this.label, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: "ex: 30",
+        border: const OutlineInputBorder(),
       ),
     );
   }

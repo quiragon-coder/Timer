@@ -1,12 +1,10 @@
-﻿import "package:flutter/material.dart";
+import 'package:flutter/material.dart';
 
 class Activity {
   final String id;
   final String name;
   final String emoji;
   final Color color;
-
-  /// Objectifs (minutes). Tous optionnels.
   final int? dailyGoalMinutes;
   final int? weeklyGoalMinutes;
   final int? monthlyGoalMinutes;
@@ -46,26 +44,24 @@ class Activity {
   }
 
   Map<String, dynamic> toJson() => {
-        "id": id,
-        "name": name,
-        "emoji": emoji,
-        "color": color.value, // peut lever un warning deprecation, sans gravitÃ©
-        "dailyGoalMinutes": dailyGoalMinutes,
-        "weeklyGoalMinutes": weeklyGoalMinutes,
-        "monthlyGoalMinutes": monthlyGoalMinutes,
-        "yearlyGoalMinutes": yearlyGoalMinutes,
+        'id': id,
+        'name': name,
+        'emoji': emoji,
+        'color': color.value,
+        'dailyGoalMinutes': dailyGoalMinutes,
+        'weeklyGoalMinutes': weeklyGoalMinutes,
+        'monthlyGoalMinutes': monthlyGoalMinutes,
+        'yearlyGoalMinutes': yearlyGoalMinutes,
       };
 
-  factory Activity.fromJson(Map<String, dynamic> json) {
-    return Activity(
-      id: json["id"] as String,
-      name: json["name"] as String,
-      emoji: json["emoji"] as String,
-      color: Color((json["color"] as int?) ?? 0xFF6C63FF),
-      dailyGoalMinutes: json["dailyGoalMinutes"] as int?,
-      weeklyGoalMinutes: json["weeklyGoalMinutes"] as int?,
-      monthlyGoalMinutes: json["monthlyGoalMinutes"] as int?,
-      yearlyGoalMinutes: json["yearlyGoalMinutes"] as int?,
-    );
-  }
+  factory Activity.fromJson(Map<String, dynamic> json) => Activity(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        emoji: json['emoji'] as String,
+        color: Color(json['color'] as int),
+        dailyGoalMinutes: json['dailyGoalMinutes'] as int?,
+        weeklyGoalMinutes: json['weeklyGoalMinutes'] as int?,
+        monthlyGoalMinutes: json['monthlyGoalMinutes'] as int?,
+        yearlyGoalMinutes: json['yearlyGoalMinutes'] as int?,
+      );
 }
