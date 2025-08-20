@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
 import '../providers.dart'; // activitiesProvider, dbProvider
-import '../providers_settings.dart'; // <- réglages persistants
+import '../providers_settings.dart';
 import '../widgets/activity_controls.dart';
 import '../widgets/mini_heatmap.dart';
 import 'activity_detail_page.dart';
@@ -35,11 +35,28 @@ class ActivitiesListPage extends ConsumerWidget {
       body: activitiesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erreur: $e')),
-        data: (list) {
-          if (list.isEmpty) {
+        data: (list0) {
+          if (list0.isEmpty) {
             return const Center(
               child: Text('Aucune activit\u00E9. Ajoute-en une \u2192'),
             );
+          }
+
+          // Tri selon réglage
+          final db = ref.watch(dbProvider);
+          final list = [...list0];
+          switch (settings.activitiesSort) {
+            case ActivitiesSort.name:
+              list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+              break;
+            case ActivitiesSort.runningFirst:
+              list.sort((a, b) {
+                final ar = db.isRunning(a.id) ? 1 : 0;
+                final br = db.isRunning(b.id) ? 1 : 0;
+                if (ar != br) return br - ar; // running d'abord
+                return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+              });
+              break;
           }
 
           // Cas 1 activité -> mini-heatmap selon le réglage

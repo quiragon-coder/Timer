@@ -10,7 +10,8 @@
         "fl_chart",
         "flutter",
         "flutter_riverpod",
-        "intl"
+        "intl",
+        "shared_preferences"
       ],
       "devDependencies": [
         "flutter_lints",

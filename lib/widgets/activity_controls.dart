@@ -1,11 +1,11 @@
-// lib/widgets/activity_controls.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers.dart'; // dbProvider
+import '../providers.dart';
+import '../providers_settings.dart';
 
-/// Boutons Démarrer / Pause-Reprendre / Arrêter pour une activité.
-class ActivityControls extends ConsumerWidget {
+class ActivityControls extends ConsumerStatefulWidget {
   const ActivityControls({
     super.key,
     required this.activityId,
@@ -16,43 +16,100 @@ class ActivityControls extends ConsumerWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ActivityControls> createState() => _ActivityControlsState();
+}
+
+class _ActivityControlsState extends ConsumerState<ActivityControls> {
+  Future<void> _start() async {
+    final db = ref.read(dbProvider);
+    final settings = ref.read(settingsProvider);
+    await db.start(widget.activityId);
+    if (settings.hapticsOnControls) {
+      HapticFeedback.mediumImpact();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _togglePause() async {
+    final db = ref.read(dbProvider);
+    final settings = ref.read(settingsProvider);
+    if (!db.isRunning(widget.activityId)) return;
+    await db.togglePause(widget.activityId);
+    if (settings.hapticsOnControls) {
+      HapticFeedback.selectionClick();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _stop() async {
+    final db = ref.read(dbProvider);
+    final settings = ref.read(settingsProvider);
+    if (!db.isRunning(widget.activityId)) return;
+
+    if (settings.confirmStop) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Arrêter la session ?'),
+          content: const Text('La session en cours sera arrêtée.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+            FilledButton.tonal(onPressed: () => Navigator.pop(context, true), child: const Text('Arrêter')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+
+    await db.stop(widget.activityId);
+    if (settings.hapticsOnControls) {
+      HapticFeedback.heavyImpact();
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
+    final running = db.isRunning(widget.activityId);
+    final paused = db.isPaused(widget.activityId);
 
-    final bool running = db.isRunning(activityId);
-    final bool paused  = db.isPaused(activityId);
+    final ButtonStyle filled = FilledButton.styleFrom();
+    final ButtonStyle tonal = FilledButton.tonalStyleFrom();
+    final ButtonStyle outlined = OutlinedButton.styleFrom();
 
-    final EdgeInsets pad = compact
-        ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
-        : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
+    final pad = widget.compact ? const EdgeInsets.symmetric(horizontal: 8) : null;
 
+    if (!running) {
+      // DÉMARRER
+      return FilledButton(
+        style: filled,
+        onPressed: _start,
+        child: const Text('Démarrer'),
+      );
+    }
+
+    // EN COURS
     return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        ElevatedButton.icon(
-          onPressed: running ? null : () async {
-            await ref.read(dbProvider).start(activityId);
-          },
-          icon: const Icon(Icons.play_arrow_rounded),
-          label: const Text('Démarrer'),
-          style: ElevatedButton.styleFrom(padding: pad),
-        ),
-        OutlinedButton.icon(
-          onPressed: running ? () async {
-            await ref.read(dbProvider).togglePause(activityId);
-          } : null,
-          icon: Icon(paused ? Icons.play_arrow_rounded : Icons.pause_rounded),
-          label: Text(paused ? 'Reprendre' : 'Mettre en pause'),
-          style: OutlinedButton.styleFrom(padding: pad),
-        ),
-        OutlinedButton.icon(
-          onPressed: running ? () async {
-            await ref.read(dbProvider).stop(activityId);
-          } : null,
-          icon: const Icon(Icons.stop_rounded),
-          label: const Text('Arrêter'),
-          style: OutlinedButton.styleFrom(padding: pad),
+        if (!paused)
+          FilledButton.tonal(
+            style: tonal,
+            onPressed: _togglePause,
+            child: const Text('Mettre en pause'),
+          )
+        else
+          FilledButton(
+            style: filled,
+            onPressed: _togglePause,
+            child: const Text('Reprendre'),
+          ),
+        OutlinedButton(
+          style: outlined.copyWith(padding: pad),
+          onPressed: _stop,
+          child: const Text('Arrêter'),
         ),
       ],
     );
