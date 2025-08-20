@@ -1,4 +1,4 @@
-import 'dart:collection';
+﻿import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -6,7 +6,7 @@ import '../models/activity.dart';
 import '../models/session.dart';
 import '../models/pause.dart';
 
-/// Base de données en mémoire + notifications UI.
+/// Base de donnÃ©es en mÃ©moire + notifications UI.
 class DatabaseService extends ChangeNotifier {
   final Map<String, Activity> _activities = {};
   final List<Session> _sessions = [];
@@ -67,7 +67,7 @@ class DatabaseService extends ChangeNotifier {
 
   // ---------- Sessions (Start / Pause / Resume / Stop) ----------
   Future<void> quickStart(String activityId) async {
-    if (_currentSession(activityId) != null) return; // déjà en cours
+    if (_currentSession(activityId) != null) return; // dÃ©jÃ  en cours
     _sessions.add(Session(
       id: _newId(),
       activityId: activityId,
@@ -109,7 +109,7 @@ class DatabaseService extends ChangeNotifier {
       if (pIdx >= 0) _pauses[pIdx] = open.copyWith(endAt: DateTime.now());
     }
 
-    // clôture la session
+    // clÃ´ture la session
     final sIdx = _sessions.indexWhere((s) => s.id == current.id);
     if (sIdx >= 0) {
       _sessions[sIdx] = current.copyWith(endAt: DateTime.now());
@@ -120,7 +120,7 @@ class DatabaseService extends ChangeNotifier {
   // ---------- Queries (synchro pour l'UI) ----------
   List<Session> listSessionsByActivity(String activityId) {
     final all = _sessionsForActivity(activityId);
-    all.sort((a, b) => b.startAt.compareTo(a.startAt)); // récentes d'abord
+    all.sort((a, b) => b.startAt.compareTo(a.startAt)); // rÃ©centes d'abord
     return UnmodifiableListView(all);
   }
 
@@ -142,7 +142,7 @@ class DatabaseService extends ChangeNotifier {
     final s = _currentSession(activityId);
     if (s == null) return Duration.zero;
 
-    // si en pause, on ne compte pas le temps depuis le début de la pause
+    // si en pause, on ne compte pas le temps depuis le dÃ©but de la pause
     final pause = _openPause(s.id);
     final end = pause != null ? pause.startAt : DateTime.now();
     return end.difference(s.startAt) - _pausedAccumulated(s.id, until: end);
@@ -165,4 +165,12 @@ class DatabaseService extends ChangeNotifier {
 
   Future<List<Pause>> getPausesBySession(String sessionId) async =>
       listPausesBySession(sessionId);
+  // -- added by patch: update an activity goals/name/color etc.
+  void updateActivity(Activity updated) {
+    // met Ã  jour l'activitÃ© (in-memory)
+    final idx = _activities.indexWhere((a) => a.id == updated.id);
+    if (idx != -1) {
+      _activities[idx] = updated;
+    }
+  }
 }

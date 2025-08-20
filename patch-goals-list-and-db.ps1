@@ -1,4 +1,68 @@
-﻿import "dart:async";
+# patch-goals-list-and-db.ps1
+# - Ajoute DatabaseService.updateActivity(...)
+# - Améliore la liste: sous-titre 2 (objectifs Semaine/Mois/Année)
+# - Corrige la page détail pour refléter immédiatement les objectifs modifiés
+# - Clean/pub get/analyze + (commit/push si .git)
+
+param([string]$Message = "feat: goals chips in list + updateActivity in DB")
+
+$ErrorActionPreference = "Stop"
+Set-Location -Path $PSScriptRoot
+
+function Step($t){ Write-Host "`n==> $t" -ForegroundColor Cyan }
+function Ok($t){ Write-Host "OK: $t" -ForegroundColor Green }
+function Warn($t){ Write-Host "WARN: $t" -ForegroundColor Yellow }
+
+# -------- helper: safe write (with .bak) --------
+function Write-File {
+  param([string]$Path,[string]$Content)
+  $dir = Split-Path $Path -Parent
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+  if (Test-Path $Path) { Copy-Item -Force $Path "$Path.bak" }
+  Set-Content -Path $Path -Value $Content -Encoding UTF8
+  Ok "Wrote: $Path"
+}
+
+# -------- 1) Patch DatabaseService: add updateActivity(...) --------
+Step "Patch DatabaseService.updateActivity(...)"
+$svcPath = "lib/services/database_service.dart"
+if (-not (Test-Path $svcPath)) { throw "Fichier manquant: $svcPath" }
+$svc = Get-Content $svcPath -Raw
+
+if ($svc -notmatch "class\s+DatabaseService") {
+  throw "Impossible de trouver class DatabaseService dans $svcPath"
+}
+
+if ($svc -notmatch "void\s+updateActivity\s*\(") {
+  # On insère la méthode juste avant la dernière '}' du fichier
+  $method = @'
+  // -- added by patch: update an activity goals/name/color etc.
+  void updateActivity(Activity updated) {
+    // met à jour l'activité (in-memory)
+    final idx = _activities.indexWhere((a) => a.id == updated.id);
+    if (idx != -1) {
+      _activities[idx] = updated;
+    }
+  }
+'@
+
+  # S'assure que l'import de Activity est présent (au cas où)
+  if ($svc -notmatch 'import\s+["''].*models\/activity\.dart["''];') {
+    $svc = $svc -replace '(import\s+["'']package:flutter\/material\.dart["''];\s*)',
+      "`$1import ""package:habits_timer/models/activity.dart"";" + [Environment]::NewLine
+  }
+
+  $svcNew = [regex]::Replace($svc, "\}\s*$", "$method`n}", 1)
+  Set-Content -Path $svcPath -Value $svcNew -Encoding UTF8
+  Ok "updateActivity(...) ajouté dans DatabaseService"
+} else {
+  Ok "updateActivity(...) déjà présent - rien à faire"
+}
+
+# -------- 2) Remplace ActivitiesListPage avec objectifs S/M/A --------
+Step "Replace lib/pages/activities_list_page.dart (goals chips)"
+$activitiesList = @'
+import "dart:async";
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
@@ -23,7 +87,7 @@ class ActivitiesListPage extends ConsumerWidget {
         error: (e, _) => Center(child: Text("Erreur: $e")),
         data: (list) {
           if (list.isEmpty) {
-            return const Center(child: Text("Aucune activitÃ©. Ajoute-en une âž•"));
+            return const Center(child: Text("Aucune activité. Ajoute-en une ➕"));
           }
           return ListView.separated(
             padding: const EdgeInsets.all(12),
@@ -147,7 +211,7 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
 
           const SizedBox(height: 6),
 
-          // Ligne 2: chips Semaine / Mois / AnnÃ©e (verts si atteint)
+          // Ligne 2: chips Semaine / Mois / Année (verts si atteint)
           Wrap(
             spacing: 8, runSpacing: 8,
             children: [
@@ -203,4 +267,58 @@ class _GoalChip extends StatelessWidget {
       },
     );
   }
+}
+'@
+Write-File -Path "lib/pages/activities_list_page.dart" -Content $activitiesList
+
+# -------- 3) Patch ActivityDetailPage pour refléter de suite les objectifs --------
+Step "Patch lib/pages/activity_detail_page.dart (keep current activity instance)"
+$detailPath = "lib/pages/activity_detail_page.dart"
+if (-not (Test-Path $detailPath)) { throw "Fichier manquant: $detailPath" }
+$detail = Get-Content $detailPath -Raw
+
+# Si pas déjà présent, on introduit _current et on l'utilise
+if ($detail -notmatch "_current\s*;") {
+  # inject 'late Activity _current;' après la classe State
+  $detail = $detail -replace "(class\s+_ActivityDetailPageState\s+extends\s+ConsumerState<ActivityDetailPage>\s*\{)",
+    "`$1`n  late Activity _current;"
+
+  # initState
+  if ($detail -notmatch "void\s+initState\s*\(") {
+    $detail = $detail -replace "(class\s+_ActivityDetailPageState[^{]*\{)",
+      "`$1`n  @override`n  void initState() {`n    super.initState();`n    _current = widget.activity;`n  }`n"
+  } else {
+    $detail = $detail -replace "void\s+initState\s*\(\)\s*\{\s*super\.initState\(\);\s*\}",
+      "void initState() { super.initState(); _current = widget.activity; }"
+  }
+
+  # remplacer usages de widget.activity par _current
+  $detail = $detail -replace "widget\.activity", "_current"
+
+  # après sauvegarde dans _openGoalsSheet: _current = updated;
+  $detail = $detail -replace "(db\.updateActivity\(updated\);\s*[\r\n\s]*)(if\s*\(mounted\)\s*setState\(\(\)\s*\{\s*\}\);\s*)",
+    "`$1`n      _current = updated;`n      if (mounted) setState(() {});`n"
+  $detail | Set-Content -Path $detailPath -Encoding UTF8
+  Ok "ActivityDetailPage patché (utilise _current)"
+} else {
+  Ok "ActivityDetailPage déjà patché"
+}
+
+# -------- 4) Flutter toolchain --------
+Step "Flutter clean"
+flutter clean
+Step "Flutter pub get"
+flutter pub get
+Step "Flutter analyze"
+flutter analyze
+
+# -------- 5) Git --------
+if (Test-Path ".git") {
+  Step "Git add/commit/push"
+  git add -A
+  git commit -m "$Message" 2>$null | Out-Null
+  try { git pull --rebase } catch {}
+  try { git push; Ok "Pushed to GitHub" } catch { Warn "Push failed (check auth/remote)" }
+} else {
+  Warn "Pas de repo Git détecté - push ignoré"
 }

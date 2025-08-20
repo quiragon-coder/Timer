@@ -18,6 +18,13 @@ class ActivityDetailPage extends ConsumerStatefulWidget {
 }
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
+  @override
+  void initState() {
+    super.initState();
+    _current = _current;
+  }
+
+  late Activity _current;
   final _df = DateFormat("dd MMM HH:mm");
   Timer? _ticker;
 
@@ -109,24 +116,26 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       // On suppose que DatabaseService expose updateActivity(...)
       db.updateActivity(updated);
 
+      
+      _current = updated;
       if (mounted) setState(() {});
-    }
+}
   }
 
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
-    final sessions = db.listSessionsByActivity(widget.activity.id);
+    final sessions = db.listSessionsByActivity(_current.id);
 
-    final running = db.isRunning(widget.activity.id);
-    final paused = db.isPaused(widget.activity.id);
+    final running = db.isRunning(_current.id);
+    final paused = db.isPaused(_current.id);
     _syncTicker(running);
 
-    final elapsed = db.runningElapsed(widget.activity.id);
+    final elapsed = db.runningElapsed(_current.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, "0");
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, "0");
 
-    final a = widget.activity; // alias
+    final a = _current; // alias
 
     return Scaffold(
       appBar: AppBar(
@@ -273,3 +282,4 @@ class _NumField extends StatelessWidget {
     );
   }
 }
+
