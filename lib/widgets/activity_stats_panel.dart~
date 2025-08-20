@@ -13,14 +13,13 @@ class ActivityStatsPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
 
-    // Providers de stats
+    // Providers
     final todayAsync  = ref.watch(statsTodayProvider(activityId));
     final weekAsync   = ref.watch(weekTotalProvider(activityId));
     final monthAsync  = ref.watch(monthTotalProvider(activityId));
     final yearAsync   = ref.watch(yearTotalProvider(activityId));
     final hourlyAsync = ref.watch(hourlyTodayProvider(activityId));
-    // 👇 NOTE: nom conforme à ton projet
-    final last7Async  = ref.watch(statsLast7DaysProvider(activityId));
+    final last7Async  = ref.watch(last7DaysProvider(activityId)); // <-- adapte le nom si besoin
 
     return Card(
       color: scheme.surfaceContainerHighest,
@@ -40,10 +39,10 @@ class ActivityStatsPanel extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _StatChip(icon: Icons.calendar_today,     label: "Aujourd'hui", async: todayAsync),
-                _StatChip(icon: Icons.calendar_view_week,  label: 'Semaine',     async: weekAsync),
-                _StatChip(icon: Icons.calendar_view_month, label: 'Mois',        async: monthAsync),
-                _StatChip(icon: Icons.calendar_month,      label: 'Ann\u00E9e',  async: yearAsync),
+                _StatChip(icon: Icons.calendar_today,       label: "Aujourd'hui", async: todayAsync),
+                _StatChip(icon: Icons.calendar_view_week,    label: 'Semaine',     async: weekAsync),
+                _StatChip(icon: Icons.calendar_view_month,   label: 'Mois',        async: monthAsync),
+                _StatChip(icon: Icons.calendar_month,        label: 'Annee',       async: yearAsync),
               ],
             ),
 
@@ -55,7 +54,7 @@ class ActivityStatsPanel extends ConsumerWidget {
                 style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 8),
 
-            // Hourly chart -> paramètre attendu: buckets:
+            // Hourly chart -> expects `buckets:`
             hourlyAsync.when(
               loading: () => const _ChartPlaceholder(label: 'Chargement...'),
               error: (e, _) => _ChartError(e.toString()),
@@ -71,7 +70,7 @@ class ActivityStatsPanel extends ConsumerWidget {
             Text('7 derniers jours', style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 8),
 
-            // Weekly chart -> paramètre attendu: stats:
+            // Weekly chart -> expects `stats:`
             last7Async.when(
               loading: () => const _ChartPlaceholder(label: 'Chargement...'),
               error: (e, _) => _ChartError(e.toString()),
@@ -127,9 +126,7 @@ class _ChartPlaceholder extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withOpacity(.25),
-        ),
+        border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(.25)),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
     );
@@ -150,8 +147,7 @@ class _ChartError extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Theme.of(context).colorScheme.error),
       ),
-      child: Text('Erreur: $message',
-          style: Theme.of(context).textTheme.bodyMedium),
+      child: Text('Erreur: $message', style: Theme.of(context).textTheme.bodyMedium),
     );
   }
 }
