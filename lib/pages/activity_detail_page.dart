@@ -1,19 +1,18 @@
-// lib/pages/activity_detail_page.dart
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../models/activity.dart';
 import '../models/session.dart';
-import '../services/database_service.dart'; // <-- IMPORT AJOUTÉ
 import '../providers.dart';
-import '../providers_stats.dart';
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
 
 class ActivityDetailPage extends ConsumerStatefulWidget {
   final Activity activity;
+
   const ActivityDetailPage({super.key, required this.activity});
 
   @override
@@ -21,14 +20,7 @@ class ActivityDetailPage extends ConsumerStatefulWidget {
 }
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
-  late Activity _current;
   Timer? _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    _current = widget.activity;
-  }
 
   @override
   void dispose() {
@@ -48,36 +40,16 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     }
   }
 
-  void _refreshStats() {
-    final id = widget.activity.id;
-    ref.invalidate(statsTodayProvider(id));
-    ref.invalidate(weekTotalProvider(id));
-    ref.invalidate(monthTotalProvider(id));
-    ref.invalidate(yearTotalProvider(id));
-    ref.invalidate(hourlyTodayProvider(id));
-    ref.invalidate(statsLast7DaysProvider(id));
-    ref.invalidate(activitiesProvider);
-  }
-
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
+    final a = widget.activity;
 
-    final all = ref.watch(activitiesProvider).maybeWhen(
-      data: (list) => list,
-      orElse: () => <Activity>[],
-    );
-    final updated = all.firstWhere(
-          (a) => a.id == _current.id,
-      orElse: () => _current,
-    );
-    _current = updated;
-
-    final running = db.isRunning(_current.id);
-    final paused  = db.isPaused(_current.id);
+    final running = db.isRunning(a.id);
+    final paused = db.isPaused(a.id);
     _syncTicker(running);
 
-    final elapsed = db.runningElapsed(_current.id);
+    final elapsed = db.runningElapsed(a.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
@@ -85,67 +57,114 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            Text(_current.emoji, style: const TextStyle(fontSize: 20)),
+            Text(a.emoji, style: const TextStyle(fontSize: 22)),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(_current.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-            if (running)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: (paused ? Colors.orange : Colors.green).withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(paused ? Icons.pause_circle_filled : Icons.timer_outlined, size: 16),
-                  const SizedBox(width: 6),
-                  Text('$mm:$ss'),
-                ]),
+              child: Text(
+                a.name,
+                overflow: TextOverflow.ellipsis,
               ),
+            ),
           ],
         ),
+        actions: [
+          if (running)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Container(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: (paused
+                      ? Colors.orange
+                      : Theme.of(context).colorScheme.primary)
+                      .withOpacity(.12),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                      color: paused
+                          ? Colors.orange
+                          : Theme.of(context).colorScheme.primary),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      paused ? Icons.pause : Icons.timer_outlined,
+                      size: 16,
+                      color: paused
+                          ? Colors.orange
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text("$mm:$ss"),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
+          // En-tête activité
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(_current.emoji, style: const TextStyle(fontSize: 28)),
+              Text(a.emoji, style: const TextStyle(fontSize: 28)),
               const SizedBox(width: 12),
-              Container(width: 10, height: 10,
-                decoration: BoxDecoration(color: _current.color, shape: BoxShape.circle),
+              Container(
+                width: 10,
+                height: 10,
+                decoration:
+                BoxDecoration(color: a.color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  "Objectif: ${_current.dailyGoalMinutes ?? 0} min/j",
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  "Objectif: ${a.dailyGoalMinutes ?? 0} min/j",
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
+
+          // Boutons start/pause/stop
           OverflowBar(
             alignment: MainAxisAlignment.start,
-            spacing: 8, overflowSpacing: 8,
-            children: [ ActivityControls(activityId: _current.id, compact: false) ],
+            spacing: 8,
+            overflowSpacing: 8,
+            children: [
+              ActivityControls(activityId: a.id),
+            ],
           ),
+
           const SizedBox(height: 24),
 
-          Text("Historique", style: Theme.of(context).textTheme.headlineSmall),
+          // Historique
+          Text("Historique",
+              style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
-          _buildHistory(context, db, _current.id),
+          _buildHistory(context, db, a.id),
+
           const SizedBox(height: 24),
 
-          ActivityStatsPanel(activityId: _current.id),
+          // Stats
+          Text("Stats", style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          ActivityStatsPanel(activityId: a.id),
         ],
       ),
     );
   }
 
-  Widget _buildHistory(BuildContext context, DatabaseService db, String activityId) {
-    final List<Session> sessions = db.listSessionsByActivity(activityId);
+  Widget _buildHistory(
+      BuildContext context, DatabaseService db, String activityId) {
+    // Copie MUTABLE pour éviter l'erreur "Cannot modify an unmodifiable list"
+    final List<Session> sessions =
+    List<Session>.from(db.listSessionsByActivity(activityId));
+
+    // Tri du plus récent au plus ancien
     sessions.sort((a, b) {
       final da = a.endAt ?? DateTime.now();
       final dbb = b.endAt ?? DateTime.now();
@@ -156,15 +175,16 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       return ListTile(
         leading: const Icon(Icons.play_circle_outline),
         title: const Text("Aucune session"),
-        subtitle: Text("Commence une session avec le bouton Démarrer.",
-            style: Theme.of(context).textTheme.bodySmall),
+        subtitle: Text(
+          "Commence une session avec le bouton Démarrer.",
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       );
     }
 
     final fmt = DateFormat("dd/MM HH:mm");
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final s in sessions) ...[
           ListTile(
@@ -191,7 +211,15 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     final h = d.inHours;
     final m = d.inMinutes.remainder(60);
     final s = d.inSeconds.remainder(60);
-    if (h > 0) return "${h}h ${m.toString().padLeft(2, '0')}m";
-    return "${m}m ${s.toString().padLeft(2, '0')}s";
+    if (h > 0) {
+      return "${h}h ${m}m ${s}s";
+    } else if (m > 0) {
+      return "${m}m ${s}s";
+    }
+    return "${s}s";
+    // (pour un affichage 00:00:SS tu pourrais faire:
+    // final mm = d.inMinutes.remainder(60).toString().padLeft(2,'0');
+    // final ss = d.inSeconds.remainder(60).toString().padLeft(2,'0');
+    // return "$mm:$ss";
   }
 }
