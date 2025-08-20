@@ -27,7 +27,7 @@ class ActivitiesListPage extends ConsumerWidget {
           return ListView.separated(
             padding: const EdgeInsets.all(12),
             itemCount: list.length,
-            separatorBuilder: (_, __) => const Divider(),
+            separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) => _ActivityTile(a: list[i]),
           );
         },
@@ -55,29 +55,20 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
   Timer? _ticker;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _armTicker();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ActivityTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _armTicker();
-  }
-
-  @override
   void dispose() {
     _ticker?.cancel();
     super.dispose();
   }
 
-  void _armTicker() {
-    _ticker?.cancel();
-    if (ref.read(dbProvider).isRunning(widget.a.id)) {
+  void _syncTicker(bool running) {
+    final active = _ticker?.isActive ?? false;
+    if (running && !active) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() {});
       });
+    } else if (!running && active) {
+      _ticker?.cancel();
+      _ticker = null;
     }
   }
 
@@ -86,43 +77,58 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
     final db = ref.watch(dbProvider);
     final running = db.isRunning(widget.a.id);
     final paused = db.isPaused(widget.a.id);
+    // (ré)arme/arrête le ticker quand l’état change
+    _syncTicker(running);
+
     final elapsed = db.runningElapsed(widget.a.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
     return ListTile(
-      isThreeLine: true, // un peu plus de place en hauteur
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       leading: Text(widget.a.emoji, style: const TextStyle(fontSize: 24)),
-      title: Text(widget.a.name),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: widget.a.color,
-                shape: BoxShape.circle,
-              ),
-            ),
-            Text('Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j'),
-            if (running)
+      title: Text(widget.a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      // pas de trailing => plus d’espace central
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(paused ? '⏸ $mm:$ss' : '⏱ $mm:$ss'),
+                width: 10, height: 10,
+                decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle),
               ),
-          ],
-        ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (running)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(paused ? '⏸ $mm:$ss' : '⏱ $mm:$ss'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          OverflowBar(
+            alignment: MainAxisAlignment.start,
+            spacing: 8,
+            overflowSpacing: 8,
+            children: [
+              ActivityControls(activityId: widget.a.id, compact: true),
+            ],
+          ),
+        ],
       ),
-      trailing: ActivityControls(activityId: widget.a.id),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: widget.a)),
       ),

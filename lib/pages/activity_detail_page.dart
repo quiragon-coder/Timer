@@ -21,24 +21,20 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   Timer? _ticker;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _ensureTicker();
-  }
-
-  @override
   void dispose() {
     _ticker?.cancel();
     super.dispose();
   }
 
-  void _ensureTicker() {
-    _ticker?.cancel();
-    final db = ref.read(dbProvider);
-    if (db.isRunning(widget.activity.id)) {
+  void _syncTicker(bool running) {
+    final active = _ticker?.isActive ?? false;
+    if (running && !active) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {}); // rafraîchit l’elapsed affiché
+        if (mounted) setState(() {});
       });
+    } else if (!running && active) {
+      _ticker?.cancel();
+      _ticker = null;
     }
   }
 
@@ -46,24 +42,28 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
     final sessions = db.listSessionsByActivity(widget.activity.id);
+
     final running = db.isRunning(widget.activity.id);
     final paused = db.isPaused(widget.activity.id);
+    _syncTicker(running);
+
     final elapsed = db.runningElapsed(widget.activity.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.activity.emoji} ${widget.activity.name}'),
+        title: Text('${widget.activity.emoji} ${widget.activity.name}',
+            overflow: TextOverflow.ellipsis),
         actions: [
           if (running)
             Padding(
-              padding: const EdgeInsets.only(right: 12, top: 12, bottom: 12),
+              padding: const EdgeInsets.only(right: 12),
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
+                    color: (paused ? Colors.orange : Colors.green).withOpacity(.15),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(paused ? '⏸ $mm:$ss' : '⏱ $mm:$ss'),
@@ -72,22 +72,49 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
             ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
+      body: SafeArea(
         child: ListView(
+          padding: const EdgeInsets.all(12),
           children: [
-            Row(
-              children: [
-                Container(width: 16, height: 16, decoration: BoxDecoration(color: widget.activity.color, shape: BoxShape.circle)),
-                const SizedBox(width: 8),
-                Text('Objectif jour: ${widget.activity.dailyGoalMinutes ?? 0} min'),
-                const Spacer(),
-                ActivityControls(activityId: widget.activity.id),
-              ],
+            Card(
+              elevation: 0,
+              color: Theme.of(context).colorScheme.surface,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(widget.activity.emoji, style: const TextStyle(fontSize: 28)),
+                        Container(
+                          width: 12, height: 12,
+                          decoration: BoxDecoration(color: widget.activity.color, shape: BoxShape.circle),
+                        ),
+                        Text(
+                          'Objectif: ${widget.activity.dailyGoalMinutes ?? 0} min/j',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    OverflowBar(
+                      alignment: MainAxisAlignment.start,
+                      spacing: 8,
+                      overflowSpacing: 8,
+                      children: [
+                        ActivityControls(activityId: widget.activity.id, compact: true),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text('Historique', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             if (sessions.isEmpty)
@@ -122,13 +149,21 @@ class _SessionTile extends StatelessWidget {
     final ss = dur.inSeconds.remainder(60).toString().padLeft(2, '0');
 
     return ListTile(
-      contentPadding: EdgeInsets.zero,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       leading: Icon(
         end == null ? Icons.play_circle_fill : Icons.check_circle,
         color: end == null ? Colors.orange : Colors.green,
       ),
-      title: Text(end == null ? 'En cours' : 'Fini ($hh:$mm:$ss)'),
-      subtitle: Text('${df.format(s.startAt)} → ${end == null ? 'en cours' : df.format(end)}'),
+      title: Text(
+        end == null ? 'En cours' : 'Fini ($hh:$mm:$ss)',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${df.format(s.startAt)} → ${end == null ? 'en cours' : df.format(end)}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }
