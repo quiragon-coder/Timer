@@ -3,16 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
-import '../providers.dart'; // dbProvider
-import '../providers_stats.dart'; // providers des stats (today / hourly / week / month / year)
+import '../providers.dart';                      // dbProvider
+import '../providers_stats.dart';               // chips/minutes*
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
+import '../widgets/mini_heatmap.dart';
+import 'heatmap_page.dart';
 
-/// Page détail d’une activité.
 class ActivityDetailPage extends ConsumerStatefulWidget {
-  final Activity activity;
-
   const ActivityDetailPage({super.key, required this.activity});
+
+  final Activity activity;
 
   @override
   ConsumerState<ActivityDetailPage> createState() => _ActivityDetailPageState();
@@ -27,7 +28,6 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     super.dispose();
   }
 
-  // Force un petit ticker local pour faire défiler les secondes sur le badge ⏱
   void _syncTicker(bool running) {
     final active = _ticker?.isActive ?? false;
     if (running && !active) {
@@ -40,131 +40,187 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     }
   }
 
-  // Invalide tous les providers de stats liés à cette activité
-  void _invalidateAllStats(String id) {
-    ref.invalidate(statsTodayProvider(id));
-    ref.invalidate(hourlyTodayProvider(id));
-    ref.invalidate(weekTotalProvider(id));
-    ref.invalidate(monthTotalProvider(id));
-    ref.invalidate(yearTotalProvider(id));
-    // Si tu as un provider “7 derniers jours” distinct, décommente :
-    // ref.invalidate(last7DaysProvider(id));
-  }
-
   @override
   Widget build(BuildContext context) {
-    // ⚠️ On WATCH le service DB : toute évolution (start/pause/stop)
-    // reconstruit cette page automatiquement.
     final db = ref.watch(dbProvider);
-    final id = widget.activity.id;
-
-    final running = db.isRunning(id);
-    final paused = db.isPaused(id);
+    final a = widget.activity;
+    final running = db.isRunning(a.id);
+    final paused = db.isPaused(a.id);
     _syncTicker(running);
 
-    // Formate le temps écoulé courant (mm:ss) si en cours
-    final elapsed = db.runningElapsed(id);
+    // minutes pour puces
+    final todayAsync  = ref.watch(minutesTodayProvider(a.id));
+    final weekAsync   = ref.watch(minutesThisWeekProvider(a.id));
+    final monthAsync  = ref.watch(minutesThisMonthProvider(a.id));
+    final yearAsync   = ref.watch(minutesThisYearProvider(a.id));
+
+    // badge en haut à droite
+    final elapsed = db.runningElapsed(a.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 0,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(widget.activity.emoji, style: const TextStyle(fontSize: 22)),
+            Text(a.emoji, style: const TextStyle(fontSize: 20)),
             const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                widget.activity.name,
-                overflow: TextOverflow.ellipsis,
-              ),
+            Flexible(
+              child: Text(a.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium),
             ),
           ],
         ),
         actions: [
-          // Badge ⏱ en haut à droite quand une session est en cours
           if (running)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Container(
                 padding:
                 const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: (paused
-                      ? Colors.orange.withOpacity(.14)
-                      : Colors.green.withOpacity(.14)),
+                      ? Colors.orange
+                      : Theme.of(context).colorScheme.primary)
+                      .withOpacity(.12),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      paused ? Icons.pause_circle_filled : Icons.timer_outlined,
-                      size: 18,
-                      color: paused ? Colors.orange : Colors.green,
-                    ),
+                    Icon(paused ? Icons.pause : Icons.timer_outlined, size: 16),
                     const SizedBox(width: 6),
                     Text('$mm:$ss'),
                   ],
                 ),
               ),
             ),
-          IconButton(
-            tooltip: 'Rafraîchir les statistiques',
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              _invalidateAllStats(id);
-              if (mounted) setState(() {});
-            },
-          ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         children: [
-          // En-tête "objectif" + points + contrôles
-          _Header(activity: widget.activity),
-
-          const SizedBox(height: 12),
-
-          // Boutons Start/Pause-Resume/Stop (responsives)
-          ActivityControls(activityId: id),
+          // En-tête + contrôles
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(a.emoji, style: const TextStyle(fontSize: 28)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                            color: a.color, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 8),
+                      Text("Objectif: ${a.dailyGoalMinutes ?? 0} min/j"),
+                    ]),
+                    const SizedBox(height: 12),
+                    ActivityControls(activityId: a.id),
+                  ],
+                ),
+              ),
+            ],
+          ),
 
           const SizedBox(height: 16),
 
-          // Panneau Stats (aujourd’hui + semaine/mois/année + graphiques)
-          ActivityStatsPanel(activityId: id),
+          // Stats (puces + barres horaires + 7 jours)
+          Card(
+            clipBehavior: Clip.antiAlias,
+            elevation: 0,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      _StatChip(icon: Icons.today_outlined, label: "Aujourd'hui",
+                          minutesAsync: todayAsync),
+                      _StatChip(icon: Icons.view_week_outlined, label: "Semaine",
+                          minutesAsync: weekAsync),
+                      _StatChip(icon: Icons.calendar_view_month, label: "Mois",
+                          minutesAsync: monthAsync),
+                      _StatChip(icon: Icons.event_available_outlined, label: "Ann\u00E9e",
+                          minutesAsync: yearAsync),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+                  Divider(color: Theme.of(context).dividerColor),
+
+                  // Graphiques existants (si tu utilises ActivityStatsPanel)
+                  const SizedBox(height: 12),
+                  ActivityStatsPanel(activityId: a.id),
+
+                  const SizedBox(height: 20),
+
+                  // ==== Mini heatmap + "Voir plus" ====
+                  Row(
+                    children: [
+                      Text('7 derniers jours',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) =>
+                                ActivityHeatmapPage(activityId: a.id),
+                          ));
+                        },
+                        icon: const Icon(Icons.grid_view_outlined, size: 18),
+                        label: const Text('Voir plus'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  MiniHeatmap(activityId: a.id, days: 21),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.activity});
+class _StatChip extends StatelessWidget {
+  const _StatChip({
+    required this.icon,
+    required this.label,
+    required this.minutesAsync,
+  });
 
-  final Activity activity;
+  final IconData icon;
+  final String label;
+  final AsyncValue<int> minutesAsync;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // Petit point de couleur + emoji + nom
-        CircleAvatar(
-          radius: 14,
-          backgroundColor: activity.color,
-          child: Text(activity.emoji, style: const TextStyle(fontSize: 16)),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            "Objectif: ${activity.dailyGoalMinutes ?? 0} min/j",
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-      ],
+    return minutesAsync.when(
+      loading: () => Chip(
+        avatar: Icon(icon, size: 16),
+        label: const Text('...'),
+      ),
+      error: (e, _) => Chip(
+        avatar: Icon(icon, size: 16),
+        label: const Text('Err'),
+      ),
+      data: (m) => Chip(
+        avatar: Icon(icon, size: 16),
+        label: Text('$label: $m min'),
+      ),
     );
   }
 }

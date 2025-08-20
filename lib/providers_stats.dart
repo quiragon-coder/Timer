@@ -1,54 +1,73 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'providers.dart';                 // dbProvider
-import 'services/stats_service.dart';    // StatsService
-import 'models/stats.dart';              // HourlyBucket, DailyStat
+import 'providers.dart';                       // dbProvider
+import 'services/stats_service.dart';
+import 'models/stats.dart';                    // DailyStat
 
-/// Service de stats basé sur le DatabaseService
+/// Service de stats basé sur le DatabaseService existant.
 final statsServiceProvider = Provider<StatsService>((ref) {
-  final db = ref.watch(dbProvider);
+  final db = ref.read(dbProvider);
   return StatsService(db);
 });
 
-/// Minutes effectuées aujourd’hui pour une activité
-final statsTodayProvider = FutureProvider.family<int, String>((ref, activityId) async {
-  final svc = ref.watch(statsServiceProvider);
-  return svc.minutesToday(activityId);
+/// === Noms historiques (déjà présents dans ton app) =========================
+/// Gardés pour compat' avec les anciens widgets.
+final statsTodayProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesToday(activityId: activityId);
 });
 
-/// Histogramme horaire (0..23) pour aujourd’hui
-final hourlyTodayProvider =
-FutureProvider.family<List<HourlyBucket>, String>((ref, activityId) async {
-  final svc = ref.watch(statsServiceProvider);
-  return svc.hourlyToday(activityId);
+final weekTotalProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesThisWeek(activityId: activityId);
 });
 
-/// Statistiques des N derniers jours (par défaut 7 via last7DaysProvider)
-final lastNDaysProvider =
-FutureProvider.family<List<DailyStat>, ({String id, int n})>((ref, params) async {
-  final svc = ref.watch(statsServiceProvider);
-  return svc.lastNDays(params.id, n: params.n);
+final monthTotalProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesThisMonth(activityId: activityId);
 });
 
-/// Raccourci pratique pour 7 jours
+final yearTotalProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesThisYear(activityId: activityId);
+});
+
+/// === Nouveaux alias (utilisés par mes derniers extraits) ====================
+/// Même résultat, juste d'autres identifiants pour éviter les erreurs "undefined".
+final minutesTodayProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesToday(activityId: activityId);
+});
+
+final minutesThisWeekProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesThisWeek(activityId: activityId);
+});
+
+final minutesThisMonthProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesThisMonth(activityId: activityId);
+});
+
+final minutesThisYearProvider =
+FutureProvider.family<int, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).minutesThisYear(activityId: activityId);
+});
+
+/// 7 jours tout prêts (utile pour mini-heatmap si besoin rapide)
 final last7DaysProvider =
-FutureProvider.family<List<DailyStat>, String>((ref, activityId) async {
-  final svc = ref.watch(statsServiceProvider);
-  return svc.lastNDays(activityId, n: 7);
+FutureProvider.family<List<DailyStat>, String>((ref, activityId) {
+  return ref.read(statsServiceProvider).lastNDays(
+    activityId: activityId,
+    n: 7,
+  );
 });
 
-/// Totaux période courante
-final weekTotalProvider = FutureProvider.family<int, String>((ref, activityId) async {
-  final svc = ref.watch(statsServiceProvider);
-  return svc.minutesThisWeek(activityId);
-});
-
-final monthTotalProvider = FutureProvider.family<int, String>((ref, activityId) async {
-  final svc = ref.watch(statsServiceProvider);
-  return svc.minutesThisMonth(activityId);
-});
-
-final yearTotalProvider = FutureProvider.family<int, String>((ref, activityId) async {
-  final svc = ref.watch(statsServiceProvider);
-  return svc.minutesThisYear(activityId);
+/// Provider flexible: on lui passe un Map {activityId, n}.
+/// => évite les erreurs "named param not defined" vues chez toi.
+final lastNDaysProvider = FutureProvider.family<List<DailyStat>,
+    Map<String, dynamic>>((ref, args) {
+  final id = args['activityId'] as String;
+  final n = args['n'] as int;
+  return ref.read(statsServiceProvider).lastNDays(activityId: id, n: n);
 });

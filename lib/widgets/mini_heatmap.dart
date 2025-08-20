@@ -1,29 +1,23 @@
-// lib/widgets/mini_heatmap.dart
-import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/stats.dart';             // DailyStat (modèle unique)
-import '../providers_stats.dart';          // statsServiceProvider
-import '../pages/heatmap_page.dart';       // ActivityHeatmapPage
+import '../models/stats.dart';                 // DailyStat (champ: day)
+import '../providers_stats.dart';
+import '../pages/heatmap_page.dart';
 
-/// Mini heatmap compacte et interactive.
-/// - Tap simple: overlay d'info persistant (tap extérieur ou ✕ pour fermer)
-/// - Double-tap: fermeture (fade) puis navigation vers la page détaillée.
 class MiniHeatmap extends ConsumerStatefulWidget {
   const MiniHeatmap({
     super.key,
     required this.activityId,
-    this.accent,
-    this.weeks = 16, // ~4 mois
-    this.cell = 8,
+    this.days = 21,
+    this.cellSize = 14,
     this.gap = 3,
   });
 
   final String activityId;
-  final Color? accent;
-  final int weeks;
-  final double cell;
+  final int days;
+  final double cellSize;
   final double gap;
 
   @override
@@ -31,357 +25,148 @@ class MiniHeatmap extends ConsumerStatefulWidget {
 }
 
 class _MiniHeatmapState extends ConsumerState<MiniHeatmap> {
-  OverlayEntry? _hintEntry;
-  final GlobalKey<_HintOverlayState> _hintKey = GlobalKey<_HintOverlayState>();
+  OverlayEntry? _entry;
+  Timer? _hideTimer;
+
+  void _showOverlay(BuildContext context, Offset anchor, DailyStat s) {
+    _hideOverlay();
+    final overlay = Overlay.of(context);
+    _entry = OverlayEntry(
+      builder: (_) {
+        return Positioned(
+          left: anchor.dx + 8,
+          top: anchor.dy - 40,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.80),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: DefaultTextStyle(
+                style: const TextStyle(color: Colors.white),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_fmtDate(s.day)),
+                    const SizedBox(height: 2),
+                    Text('${s.minutes} min'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    overlay.insert(_entry!);
+    _hideTimer = Timer(const Duration(seconds: 2), _hideOverlay);
+  }
+
+  void _hideOverlay() {
+    _hideTimer?.cancel();
+    _hideTimer = null;
+    _entry?.remove();
+    _entry = null;
+  }
 
   @override
   void dispose() {
-    _removeHint();
+    _hideOverlay();
     super.dispose();
-  }
-
-  void _removeHint() {
-    _hintEntry?.remove();
-    _hintEntry = null;
-  }
-
-  Future<void> _dismissOverlay() async {
-    if (_hintKey.currentState != null) {
-      await _hintKey.currentState!.dismiss();
-    }
-    _removeHint();
   }
 
   @override
   Widget build(BuildContext context) {
-    final stats = ref.read(statsServiceProvider);
+    final statsAsync = ref.watch(
+      lastNDaysProvider({'activityId': widget.activityId, 'n': widget.days}),
+    );
 
-    // IMPORTANT: ta méthode lastNDays attend (activityId, n: ...).
-    final int days = (widget.weeks * 7).clamp(7, 365);
-
-    return FutureBuilder<List<DailyStat>>(
-      future: stats.lastNDays(widget.activityId, n: days),
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox(
-            height: 80, width: 200, child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
-        }
-        final data = snap.data ?? const <DailyStat>[];
-
-        final minutesByDay = <DateTime, int>{
-          for (final d in data) DateUtils.dateOnly(d.day): d.minutes,
-        };
-
-        // Nombre de jours réellement présents
-        final visibleDays = data.length.clamp(7, 365);
-        final today = DateUtils.dateOnly(DateTime.now());
-        final start = today.subtract(Duration(days: visibleDays > 0 ? visibleDays - 1 : 0));
-        final allDays = List<DateTime>.generate(
-          visibleDays > 0 ? visibleDays : 7, (i) => start.add(Duration(days: i)),
-        );
-
-        // Découpe en colonnes (lundi→dimanche)
-        final List<List<DateTime>> weeks = [];
-        var col = <DateTime>[];
-        for (final d in allDays) {
-          if (col.isEmpty) {
-            col = [d];
-          } else if (d.weekday == DateTime.monday) {
-            weeks.add(col);
-            col = [d];
-          } else {
-            col.add(d);
-          }
-        }
-        if (col.isNotEmpty) weeks.add(col);
-
-        final int maxMin =
-        minutesByDay.values.isEmpty ? 0 : minutesByDay.values.reduce(math.max);
-
-        final Color accent = widget.accent ?? Theme.of(context).colorScheme.primary;
-
-        Color colorFor(int v) {
-          if (v <= 0 || maxMin <= 0) {
-            return Theme.of(context).colorScheme.onSurface.withOpacity(.10);
-          }
-          final t = v / maxMin;
-          if (t < .20) return accent.withOpacity(.25);
-          if (t < .40) return accent.withOpacity(.45);
-          if (t < .70) return accent.withOpacity(.65);
-          return accent.withOpacity(.85);
+    return statsAsync.when(
+      loading: () => const SizedBox(height: 24, child: LinearProgressIndicator()),
+      error: (e, _) => Text('erreur: $e'),
+      data: (list) {
+        if (list.isEmpty) {
+          return const Text('Pas de donn\u00E9es');
         }
 
-        // Dimensions utiles
-        final colW = widget.cell + widget.gap;
-        final rowH = widget.cell + widget.gap;
-        final gridW = weeks.length * colW - widget.gap;
-        final gridH = 7 * rowH - widget.gap;
-
-        // Tap simple (overlay persistant)
-        void handleTapDown(TapDownDetails d) {
-          final local = d.localPosition;
-          if (local.dx < 0 || local.dy < 0 || local.dx > gridW || local.dy > gridH) {
-            return;
-          }
-          final int colIdx = (local.dx / colW).floor().clamp(0, math.max(0, weeks.length - 1));
-          final int rowIdx = (local.dy / rowH).floor().clamp(0, 6);
-
-          DateTime? day;
-          try {
-            day = weeks[colIdx].firstWhere((x) => x.weekday == rowIdx + 1);
-          } catch (_) {
-            day = null;
-          }
-          if (day == null) return;
-
-          final int minutes = minutesByDay[day] ?? 0;
-          _showOverlayPersistent(context, d.globalPosition, day, minutes);
+        // On veut les jours du plus ancien au plus récent, groupés en colonnes (semaines)
+        final data = list.reversed.toList(); // ancien -> récent
+        final cols = <List<DailyStat>>[];
+        for (var i = 0; i < data.length; i += 7) {
+          cols.add(data.sublist(i, (i + 7).clamp(0, data.length)));
         }
 
-        // Double-tap → fermer l’overlay (fade) puis ouvrir la page détaillée
-        Future<void> handleDoubleTap() async {
-          await _dismissOverlay();
-          if (!mounted) return;
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ActivityHeatmapPage(
-                activityId: widget.activityId,
-                accent: accent,
+        final max = (data.map((e) => e.minutes).fold<int>(0, (a, b) => a > b ? a : b)).clamp(1, 9999);
+
+        return GestureDetector(
+          onDoubleTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ActivityHeatmapPage(activityId: widget.activityId),
               ),
-            ),
-          );
-        }
-
-        // Grille compacte
-        final grid = SizedBox(
-          width: gridW <= 0 ? 1 : gridW,
-          height: gridH,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: handleTapDown,
-            onDoubleTap: handleDoubleTap,
+            );
+          },
+          child: SizedBox(
+            height: widget.cellSize * 7 + widget.gap * 6,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final colDays in weeks)
+                for (final col in cols)
                   Padding(
                     padding: EdgeInsets.only(right: widget.gap),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: List.generate(7, (row) {
-                        DateTime? day;
-                        try {
-                          day = colDays.firstWhere((d) => d.weekday == row + 1);
-                        } catch (_) {
-                          day = null;
-                        }
-                        final v = (day == null) ? 0 : (minutesByDay[day] ?? 0);
-                        return Padding(
-                          padding: EdgeInsets.only(bottom: widget.gap),
-                          child: Container(
-                            width: widget.cell,
-                            height: widget.cell,
-                            decoration: BoxDecoration(
-                              color: colorFor(v),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
+                      children: [
+                        for (var r = 0; r < 7; r++)
+                          Builder(
+                            builder: (ctx) {
+                              final s = r < col.length ? col[r] : null;
+                              final v = s?.minutes ?? 0;
+                              final t = v / max;
+                              final color = Color.lerp(
+                                Theme.of(context).colorScheme.surfaceContainerHighest,
+                                Theme.of(context).colorScheme.primary,
+                                t.clamp(0, 1),
+                              );
+                              return GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTapDown: (details) {
+                                  if (s == null) return;
+                                  final box = ctx.findRenderObject() as RenderBox?;
+                                  if (box == null) return;
+                                  final topLeft = box.localToGlobal(Offset.zero);
+                                  _showOverlay(context, topLeft, s);
+                                },
+                                onTapCancel: _hideOverlay,
+                                onTapUp: (_) => _hideOverlay(),
+                                child: Container(
+                                  width: widget.cellSize,
+                                  height: widget.cellSize,
+                                  margin: EdgeInsets.only(bottom: widget.gap),
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                        );
-                      }),
+                      ],
                     ),
                   ),
               ],
             ),
           ),
         );
-
-        final legend = Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _legend(Theme.of(context).colorScheme.onSurface.withOpacity(.10)),
-            const SizedBox(width: 4),
-            _legend(accent.withOpacity(.25)),
-            const SizedBox(width: 4),
-            _legend(accent.withOpacity(.45)),
-            const SizedBox(width: 4),
-            _legend(accent.withOpacity(.65)),
-            const SizedBox(width: 4),
-            _legend(accent.withOpacity(.85)),
-          ],
-        );
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            grid,
-            const SizedBox(height: 6),
-            legend,
-          ],
-        );
       },
     );
   }
 
-  static Widget _legend(Color c) => Container(
-    width: 12,
-    height: 8,
-    decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(2)),
-  );
-
-  void _showOverlayPersistent(
-      BuildContext context,
-      Offset globalPos,
-      DateTime day,
-      int minutes,
-      ) {
-    _removeHint();
-
-    final overlay = Overlay.of(context);
-    if (overlay == null) return;
-
-    final theme = Theme.of(context);
-    final media = MediaQuery.of(context);
-
-    const double cardW = 240;
-    const double cardH = 84;
-
-    final dx = (globalPos.dx + 12).clamp(8.0, media.size.width - cardW - 8.0);
-    final dy = (globalPos.dy - cardH - 12).clamp(8.0, media.size.height - cardH - 8.0);
-
-    final textTop  = "${_wd(day.weekday)} ${_two(day.day)}/${_two(day.month)}/${day.year}";
-    final textInfo = "$minutes min\nDouble-tap pour la heatmap détaillée";
-
-    _hintEntry = OverlayEntry(
-      builder: (_) => _HintOverlay(
-        key: _hintKey,
-        left: dx,
-        top: dy,
-        width: cardW,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.calendar_today_rounded, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(textTop, style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 2),
-                  Text(textInfo, style: theme.textTheme.bodySmall),
-                ],
-              ),
-            ),
-          ],
-        ),
-        onRemove: () {
-          _hintEntry?.remove();
-          _hintEntry = null;
-        },
-      ),
-    );
-
-    overlay.insert(_hintEntry!);
-  }
-
-  static String _two(int v) => v.toString().padLeft(2, '0');
-  static String _wd(int w) {
-    const fr = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-    return fr[(w - 1).clamp(0, 6)];
-  }
-}
-
-class _HintOverlay extends StatefulWidget {
-  const _HintOverlay({
-    super.key,
-    required this.left,
-    required this.top,
-    required this.width,
-    required this.child,
-    required this.onRemove,
-  });
-
-  final double left;
-  final double top;
-  final double width;
-  final Widget child;
-  final VoidCallback onRemove;
-
-  @override
-  State<_HintOverlay> createState() => _HintOverlayState();
-}
-
-class _HintOverlayState extends State<_HintOverlay>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl =
-  AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
-  late final Animation<double> _fade =
-  CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl.forward();
-  }
-
-  Future<void> dismiss() async {
-    try {
-      await _ctrl.reverse();
-    } finally {
-      if (mounted) widget.onRemove();
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: dismiss,
-            child: const ColoredBox(color: Colors.transparent),
-          ),
-        ),
-        Positioned(
-          left: widget.left,
-          top: widget.top,
-          width: widget.width,
-          child: FadeTransition(
-            opacity: _fade,
-            child: Material(
-              color: Colors.transparent,
-              child: Card(
-                elevation: 10,
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: widget.child),
-                      IconButton(
-                        splashRadius: 16,
-                        tooltip: 'Fermer',
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: dismiss,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+  String _fmtDate(DateTime d) {
+    // format simple JJ/MM
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    return '$dd/$mm';
   }
 }
