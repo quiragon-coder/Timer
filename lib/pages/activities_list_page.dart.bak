@@ -1,12 +1,13 @@
-import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import "dart:async";
+import "package:flutter/material.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
 
-import '../models/activity.dart';
-import '../providers.dart';
-import '../widgets/activity_controls.dart';
-import 'create_activity_page.dart';
-import 'activity_detail_page.dart';
+import "../models/activity.dart";
+import "../providers.dart";
+import "../providers_stats.dart";
+import "../widgets/activity_controls.dart";
+import "create_activity_page.dart";
+import "activity_detail_page.dart";
 
 class ActivitiesListPage extends ConsumerWidget {
   const ActivitiesListPage({super.key});
@@ -16,13 +17,13 @@ class ActivitiesListPage extends ConsumerWidget {
     final activitiesAsync = ref.watch(activitiesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Activities')),
+      appBar: AppBar(title: const Text("Activities")),
       body: activitiesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur: $e')),
+        error: (e, _) => Center(child: Text("Erreur: $e")),
         data: (list) {
           if (list.isEmpty) {
-            return const Center(child: Text('Aucune activité. Ajoute-en une ➕'));
+            return const Center(child: Text("Aucune activitÃ©. Ajoute-en une âž•"));
           }
           return ListView.separated(
             padding: const EdgeInsets.all(12),
@@ -37,7 +38,7 @@ class ActivitiesListPage extends ConsumerWidget {
           MaterialPageRoute(builder: (_) => const CreateActivityPage()),
         ),
         icon: const Icon(Icons.add),
-        label: const Text('Ajouter'),
+        label: const Text("Ajouter"),
       ),
     );
   }
@@ -63,9 +64,7 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
   void _syncTicker(bool running) {
     final active = _ticker?.isActive ?? false;
     if (running && !active) {
-      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) { if (mounted) setState(() {}); });
     } else if (!running && active) {
       _ticker?.cancel();
       _ticker = null;
@@ -78,6 +77,9 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
     final running = db.isRunning(widget.a.id);
     final paused = db.isPaused(widget.a.id);
     _syncTicker(running);
+
+    // minutes today -> pour objectif
+    final todayAsync = ref.watch(statsTodayProvider(widget.a.id));
 
     final elapsed = db.runningElapsed(widget.a.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -92,17 +94,11 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
         children: [
           Row(
             children: [
-              Container(
-                width: 10, height: 10,
-                decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle),
-              ),
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle)),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  'Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text("Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j",
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
               const SizedBox(width: 8),
               if (running)
@@ -112,25 +108,41 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
                     color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
-                      const SizedBox(width: 4),
-                      Text('$mm:$ss'),
-                    ],
-                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
+                    const SizedBox(width: 4), Text("$mm:$ss"),
+                  ]),
                 ),
             ],
           ),
+          const SizedBox(height: 6),
+
+          // Reste X min aujourd'hui ou check
+          todayAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (e, _) => const SizedBox.shrink(),
+            data: (today) {
+              final goal = widget.a.dailyGoalMinutes ?? 0;
+              if (goal <= 0) return const SizedBox.shrink();
+              if (today >= goal) {
+                return Row(children: const [
+                  Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  SizedBox(width: 6),
+                  Text("Objectif du jour atteint", maxLines: 1, overflow: TextOverflow.ellipsis),
+                ]);
+              } else {
+                final remain = goal - today;
+                return Text("Reste $remain min aujourd'hui",
+                    style: Theme.of(context).textTheme.bodySmall);
+              }
+            },
+          ),
+
           const SizedBox(height: 8),
           OverflowBar(
             alignment: MainAxisAlignment.start,
-            spacing: 8,
-            overflowSpacing: 8,
-            children: [
-              ActivityControls(activityId: widget.a.id, compact: true),
-            ],
+            spacing: 8, overflowSpacing: 8,
+            children: [ ActivityControls(activityId: widget.a.id, compact: true) ],
           ),
         ],
       ),
