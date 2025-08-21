@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers.dart';           // dbProvider (pour objectif du jour)
-import '../providers_stats.dart';     // lastNDaysProvider
-import '../pages/heatmap_page.dart';  // ActivityHeatmapPage
-import 'heatmap.dart';
+import '../providers.dart';                 // dbProvider
+import 'heatmap.dart' as hw;                // widget grille
+import '../pages/heatmap_page.dart' as hp;  // page détaillée "Heatmap" (data + baseColor)
 
 class MiniHeatmap extends ConsumerStatefulWidget {
   final String activityId;
@@ -32,6 +31,19 @@ class _MiniHeatmapState extends ConsumerState<MiniHeatmap> {
     super.dispose();
   }
 
+  Future<Map<DateTime, int>> _loadMap() async {
+    final db = ref.read(dbProvider);
+    final today = DateUtils.dateOnly(DateTime.now());
+    final start = today.subtract(Duration(days: widget.days - 1));
+    final map = <DateTime, int>{};
+
+    for (int i = 0; i < widget.days; i++) {
+      final day = DateUtils.dateOnly(start.add(Duration(days: i)));
+      map[day] = db.effectiveMinutesOnDay(widget.activityId, day);
+    }
+    return map;
+  }
+
   void _showPopover(BuildContext context, DateTime day, int minutes, int goal) {
     _overlay?.remove();
 
@@ -40,26 +52,24 @@ class _MiniHeatmapState extends ConsumerState<MiniHeatmap> {
         : '${minutes} min';
 
     _overlay = OverlayEntry(
-      builder: (_) {
-        return Positioned.fill(
-          child: IgnorePointer(
-            child: Center(
-              child: Material(
-                elevation: 12,
-                borderRadius: BorderRadius.circular(10),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Text(
-                    '${day.toLocal().toString().split(' ').first}\n$txt',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+      builder: (_) => Positioned.fill(
+        child: IgnorePointer(
+          child: Center(
+            child: Material(
+              elevation: 12,
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text(
+                  '${day.toLocal().toString().split(' ').first}\n$txt',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
 
     Overlay.of(context).insert(_overlay!);
@@ -71,49 +81,34 @@ class _MiniHeatmapState extends ConsumerState<MiniHeatmap> {
 
   @override
   Widget build(BuildContext context) {
-    final statsAsync = ref.watch(
-      lastNDaysProvider(LastNDaysArgs(activityId: widget.activityId, n: widget.days)),
-    );
+    final db = ref.watch(dbProvider);
+    final goal = db.activities
+        .firstWhere((a) => a.id == widget.activityId, orElse: () => db.activities.first)
+        .dailyGoalMinutes ?? 0;
 
-    return statsAsync.when(
-      loading: () => const SizedBox(height: 80, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-      error: (e, _) => SizedBox(height: 60, child: Center(child: Text('Erreur: $e'))),
-      data: (list) {
-        // DailyStat -> Map<DateOnly, minutes>
-        final map = <DateTime, int>{};
-        for (final d in list) {
-          final k = DateUtils.dateOnly(d.date);
-          map[k] = (map[k] ?? 0) + d.minutes;
+    return FutureBuilder<Map<DateTime, int>>(
+      future: _loadMap(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const SizedBox(height: 80, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+        if (snap.hasError) {
+          return SizedBox(height: 60, child: Center(child: Text('Erreur: ${snap.error}')));
         }
 
-        // Objectif du jour
-        final db = ref.read(dbProvider);
-        final act = db.activities.firstWhere((a) => a.id == widget.activityId, orElse: () => db.activities.first);
-        final goal = act.dailyGoalMinutes ?? 0;
+        final map = snap.data ?? const <DateTime, int>{};
 
         return GestureDetector(
-          onTapDown: (_) {
-            // Consomme l'événement pour rendre le double-tap plus fiable
-          },
-          onTap: () {
-            // Tap = popover sur le dernier jour tapé ou le plus récent
-            final day = _lastTapDay ?? (map.isEmpty
-                ? DateUtils.dateOnly(DateTime.now())
-                : (map.keys.toList()..sort()).last);
-            final minutes = map[day] ?? 0;
-            _showPopover(context, day, minutes, goal);
-          },
           onDoubleTap: () {
-            // Double-tap = ouvre la Heatmap détaillée (365 jours)
+            // Ouvre la page Heatmap détaillée avec la même map (ou recalcul 365 jours si tu veux)
             Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => ActivityHeatmapPage(
-                activityId: widget.activityId,
-                n: 365,
+              builder: (_) => hp.Heatmap(
+                data: map, // tu peux recalculer avec 365 jours si besoin
                 baseColor: widget.baseColor,
               ),
             ));
           },
-          child: Heatmap(
+          child: hw.Heatmap(
             data: map,
             baseColor: widget.baseColor,
             onDayTap: (day, minutes) {

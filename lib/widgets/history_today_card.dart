@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart'; // dbProvider
-import '../services/database_models_adapters.dart'; // extension typée
+import '../services/database_models_adapters.dart';
+import '../services/database_service.dart'; // ✅ pour typer db
 
 /// Carte "Historique (aujourd'hui)" + badge Total du jour.
 class HistoryTodayCard extends ConsumerStatefulWidget {
   final String activityId;
   final String activityName;
-  final int maxRows; // nombre max de lignes (sessions) à afficher
+  final int maxRows;
 
   const HistoryTodayCard({
     super.key,
@@ -46,7 +47,6 @@ class _HistoryTodayCardState extends ConsumerState<HistoryTodayCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Titre + Badge Total
                 Row(
                   children: [
                     Expanded(
@@ -92,7 +92,7 @@ class _HistoryTodayCardState extends ConsumerState<HistoryTodayCard> {
     );
   }
 
-  Future<List<_HistRow>> _loadToday(dynamic db, String activityId) async {
+  Future<List<_HistRow>> _loadToday(DatabaseService db, String activityId) async {
     final sessions = db.listSessionsByActivityModel(activityId);
     final today = DateUtils.dateOnly(DateTime.now());
     final rows = <_HistRow>[];

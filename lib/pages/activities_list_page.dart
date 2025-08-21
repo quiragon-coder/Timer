@@ -1,175 +1,157 @@
-import 'dart:async';
+// lib/pages/activities_list_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
-import '../providers.dart';                 // dbProvider
-import '../widgets/activity_controls.dart'; // start / pause / stop
-import 'create_activity_page.dart';
+import '../providers.dart';
+import '../utils/color_compat.dart';
+import '../widgets/mini_heatmap.dart';
+import '../widgets/elapsed_badge.dart';
 import 'activity_detail_page.dart';
+import 'create_activity_page.dart';
 
 class ActivitiesListPage extends ConsumerWidget {
   const ActivitiesListPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Si tu as un activitiesProvider (FutureProvider<List<Activity>>), dé-commente la ligne suivante
-    // final activitiesAsync = ref.watch(activitiesProvider);
-
-    // Sinon on lit directement la liste depuis le service (synchrone)
     final db = ref.watch(dbProvider);
-    final list = db.activities;
+    final activities = db.activities;
+
+    void goToCreate() async {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CreateActivityPage()));
+    }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Activities')),
-      body: list.isEmpty
-          ? const Center(
-        child: Text('Aucune activité. Ajoute-en une →'),
-      )
-          : ListView.separated(
-        padding: const EdgeInsets.all(12),
-        itemCount: list.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (_, i) => _ActivityTile(a: list[i]),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const CreateActivityPage()),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Ajouter'),
-      ),
-    );
-
-    // --- Variante si tu utilises activitiesProvider (AsyncValue) ---
-    // return Scaffold(
-    //   appBar: AppBar(title: const Text('Activities')),
-    //   body: activitiesAsync.when(
-    //     loading: () => const Center(child: CircularProgressIndicator()),
-    //     error: (e, _) => Center(child: Text('Erreur: $e')),
-    //     data: (list) {
-    //       if (list.isEmpty) {
-    //         return const Center(child: Text('Aucune activité. Ajoute-en une →'));
-    //       }
-    //       return ListView.separated(
-    //         padding: const EdgeInsets.all(12),
-    //         itemCount: list.length,
-    //         separatorBuilder: (_, __) => const Divider(height: 1),
-    //         itemBuilder: (_, i) => _ActivityTile(a: list[i]),
-    //       );
-    //     },
-    //   ),
-    //   floatingActionButton: FloatingActionButton.extended(
-    //     onPressed: () => Navigator.of(context).push(
-    //       MaterialPageRoute(builder: (_) => const CreateActivityPage()),
-    //     ),
-    //     icon: const Icon(Icons.add),
-    //     label: const Text('Ajouter'),
-    //   ),
-    // );
-  }
-}
-
-class _ActivityTile extends ConsumerStatefulWidget {
-  final Activity a;
-  const _ActivityTile({required this.a});
-
-  @override
-  ConsumerState<_ActivityTile> createState() => _ActivityTileState();
-}
-
-class _ActivityTileState extends ConsumerState<_ActivityTile> {
-  Timer? _ticker;
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
-  void _syncTicker(bool tick) {
-    final active = _ticker?.isActive ?? false;
-    if (tick && !active) {
-      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
-    } else if (!tick && active) {
-      _ticker?.cancel();
-      _ticker = null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final db = ref.watch(dbProvider);               // WATCH pour rebuild quand notifyListeners()
-    final running = db.isRunning(widget.a.id);
-    final paused  = db.isPaused(widget.a.id);
-
-    // Le ticker ne tourne que quand la session est démarrée et non en pause
-    _syncTicker(running && !paused);
-
-    final elapsed = db.runningElapsed(widget.a.id);
-    final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
-
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      leading: Text(widget.a.emoji, style: const TextStyle(fontSize: 24)),
-      title: Text(widget.a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  "Objectif: ${(widget.a.dailyGoalMinutes ?? 0)} min/j",
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (running)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: paused ? Colors.orange.withOpacity(.15) : Colors.green.withOpacity(.15),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
-                      const SizedBox(width: 4),
-                      Text("$mm:$ss"),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Contrôles Start/Pause/Stop
-          OverflowBar(
-            alignment: MainAxisAlignment.start,
-            spacing: 8,
-            overflowSpacing: 8,
-            children: [ActivityControls(activityId: widget.a.id, compact: true)],
+      appBar: AppBar(
+        title: const Text('Mes activités'),
+        actions: [
+          IconButton(
+            tooltip: 'Nouvelle activité',
+            icon: const Icon(Icons.add_rounded),
+            onPressed: goToCreate,
           ),
         ],
       ),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: widget.a)),
-        );
-      },
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: goToCreate,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Créer'),
+      ),
+      body: activities.isEmpty
+          ? _EmptyState(onCreate: goToCreate)
+          : ListView.separated(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+        itemCount: activities.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final a = activities[index];
+          final isRunning = db.isRunning(a.id);
+          final isPaused = db.isPaused(a.id);
+
+          return Card(
+            elevation: 0,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ActivityDetailPage(activityId: a.id),
+                ));
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Text(a.emoji, style: const TextStyle(fontSize: 20)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            a.name,
+                            style: Theme.of(context).textTheme.titleMedium,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+
+                        if (isRunning)
+                          ElapsedBadge(
+                            isRunning: isRunning,
+                            isPaused: isPaused,
+                            getElapsed: () => db.runningElapsed(a.id),
+                          ),
+
+                        const SizedBox(width: 8),
+
+                        IconButton(
+                          tooltip: 'Démarrer',
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          onPressed: isRunning ? null : () async { await db.start(a.id); },
+                        ),
+                        IconButton(
+                          tooltip: isPaused ? 'Reprendre' : 'Pause',
+                          icon: Icon(isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
+                          onPressed: isRunning ? () async { await db.togglePause(a.id); } : null,
+                        ),
+                        IconButton(
+                          tooltip: 'Stop',
+                          icon: const Icon(Icons.stop_rounded),
+                          onPressed: isRunning ? () async { await db.stop(a.id); } : null,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: MiniHeatmap(activityId: a.id, days: 28, baseColor: a.color),
+                    ),
+
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        width: 64,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: a.color.withAlphaCompat(.9),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final VoidCallback onCreate;
+  const _EmptyState({required this.onCreate});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+      children: [
+        const SizedBox(height: 40),
+        Icon(Icons.timer_outlined, size: 72, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 16),
+        Text("Aucune activité", textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Text("Crée ta première activité pour démarrer un timer.",
+            textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+        const SizedBox(height: 24),
+        Center(
+          child: FilledButton.icon(onPressed: onCreate, icon: const Icon(Icons.add_rounded), label: const Text("Créer une activité")),
+        ),
+      ],
     );
   }
 }

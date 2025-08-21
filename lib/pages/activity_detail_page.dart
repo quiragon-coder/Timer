@@ -1,66 +1,31 @@
 ﻿// lib/pages/activity_detail_page.dart
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
-import '../providers.dart';                // dbProvider, activitiesProvider (si présent)
-import '../services/database_models_adapters.dart'; // extensions typées sur DatabaseService
+import '../providers.dart';
 import '../utils/color_compat.dart';
 
 import '../widgets/mini_heatmap.dart';
 import '../widgets/activity_stats_panel.dart';
 import '../widgets/history_today_card.dart';
+import '../widgets/elapsed_badge.dart';
 
 import 'activity_history_page.dart';
-import 'heatmap_page.dart';
+import 'heatmap_page.dart' as hp; // alias de la page détaillée "Heatmap" (attend data + baseColor)
 
-class ActivityDetailPage extends ConsumerStatefulWidget {
+class ActivityDetailPage extends ConsumerWidget {
   final String activityId;
-
-  const ActivityDetailPage({
-    super.key,
-    required this.activityId,
-  });
+  const ActivityDetailPage({super.key, required this.activityId});
 
   @override
-  ConsumerState<ActivityDetailPage> createState() => _ActivityDetailPageState();
-}
-
-class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
-  Timer? _ticker;
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
-  /// Démarre/arrête le tick d’1s selon l’état en cours.
-  void _updateTicker({required bool shouldTick}) {
-    if (shouldTick) {
-      if (_ticker == null || !_ticker!.isActive) {
-        _ticker?.cancel();
-        _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-          if (mounted) setState(() {});
-        });
-      }
-    } else {
-      _ticker?.cancel();
-      _ticker = null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final db = ref.watch(dbProvider);
 
-    // Récupère l’activité (depuis la source de vérité du service)
     final Activity? activity = db.activities.firstWhere(
-          (a) => a.id == widget.activityId,
+          (a) => a.id == activityId,
       orElse: () => Activity(
-        id: widget.activityId,
+        id: activityId,
         name: 'Activité',
         emoji: '⏱️',
         color: Theme.of(context).colorScheme.primary,
@@ -71,12 +36,8 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       ),
     );
 
-    final bool isRunning = db.isRunning(widget.activityId);
-    final bool isPaused  = db.isPaused(widget.activityId);
-    final Duration elapsed = db.runningElapsed(widget.activityId); // supposé inclure le temps actuel
-
-    // Active le tick seulement quand ça tourne et n’est pas en pause
-    _updateTicker(shouldTick: isRunning && !isPaused);
+    final isRunning = db.isRunning(activityId);
+    final isPaused  = db.isPaused(activityId);
 
     return Scaffold(
       appBar: AppBar(
@@ -88,15 +49,21 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
           ],
         ),
         actions: [
-          // Accès direct à la Heatmap détaillée (90 jours)
           IconButton(
             tooltip: 'Heatmap détaillée',
             icon: const Icon(Icons.grid_view_rounded),
             onPressed: () {
+              // Construit la map des 90 derniers jours et ouvre la page Heatmap (hp.Heatmap)
+              final today = DateUtils.dateOnly(DateTime.now());
+              final start = today.subtract(const Duration(days: 90 - 1));
+              final map = <DateTime, int>{};
+              for (int i = 0; i < 90; i++) {
+                final day = DateUtils.dateOnly(start.add(Duration(days: i)));
+                map[day] = db.effectiveMinutesOnDay(activityId, day);
+              }
               Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => ActivityHeatmapPage(
-                  activityId: widget.activityId,
-                  n: 90,
+                builder: (_) => hp.Heatmap(
+                  data: map,
                   baseColor: activity?.color ?? Theme.of(context).colorScheme.primary,
                 ),
               ));
@@ -105,35 +72,23 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          // Si tu as un mécanisme de reload, déclenche-le ici.
-          setState(() {});
-        },
+        onRefresh: () async {},
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // En-tête : couleur + objectifs rapides (si renseignés)
               _HeaderInfo(activity: activity),
 
               const SizedBox(height: 12),
 
-              // Contrôles + badge live mm:ss
-              _ControlsRow(
-                activityId: widget.activityId,
-                isRunning: isRunning,
-                isPaused: isPaused,
-                elapsed: elapsed,
-                onChanged: () => setState(() {}),
-              ),
+              _ControlsCard(activityId: activityId, isRunning: isRunning, isPaused: isPaused),
 
               const SizedBox(height: 12),
 
-              // Historique du jour (typé)
               HistoryTodayCard(
-                activityId: widget.activityId,
+                activityId: activityId,
                 activityName: activity?.name ?? 'Activité',
                 maxRows: 5,
               ),
@@ -144,7 +99,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                   onPressed: () {
                     Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => ActivityHistoryPage(
-                        activityId: widget.activityId,
+                        activityId: activityId,
                         activityName: activity?.name ?? 'Activité',
                       ),
                     ));
@@ -156,7 +111,6 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
 
               const SizedBox(height: 12),
 
-              // Mini-heatmap riche (28 jours)
               Card(
                 elevation: 0,
                 child: Padding(
@@ -167,7 +121,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                       Text('Aperçu (28 jours)', style: Theme.of(context).textTheme.titleSmall),
                       const SizedBox(height: 8),
                       MiniHeatmap(
-                        activityId: widget.activityId,
+                        activityId: activityId,
                         days: 28,
                         baseColor: activity?.color ?? Theme.of(context).colorScheme.primary,
                       ),
@@ -178,12 +132,11 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
 
               const SizedBox(height: 12),
 
-              // Stats (aujourd’hui/semaine/mois/année + graphes)
               Card(
                 elevation: 0,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: ActivityStatsPanel(activityId: widget.activityId),
+                  child: ActivityStatsPanel(activityId: activityId),
                 ),
               ),
             ],
@@ -203,9 +156,8 @@ class _HeaderInfo extends StatelessWidget {
     final c = activity?.color ?? Theme.of(context).colorScheme.primary;
     final rows = <Widget>[];
 
-    // Objectifs s’ils existent
     if ((activity?.dailyGoalMinutes ?? 0) > 0) {
-      rows.add(_GoalChip(icon: Icons.today,   label: "${activity!.dailyGoalMinutes} min/jour",   color: c));
+      rows.add(_GoalChip(icon: Icons.today, label: "${activity!.dailyGoalMinutes} min/jour", color: c));
     }
     if ((activity?.weeklyGoalMinutes ?? 0) > 0) {
       rows.add(_GoalChip(icon: Icons.calendar_view_week, label: "${activity!.weeklyGoalMinutes} min/sem.", color: c));
@@ -224,7 +176,6 @@ class _HeaderInfo extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Bandeau couleur activité
             Container(
               height: 6,
               decoration: BoxDecoration(
@@ -234,16 +185,9 @@ class _HeaderInfo extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             if (rows.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: rows,
-              )
+              Wrap(spacing: 8, runSpacing: 8, children: rows)
             else
-              Text(
-                "Aucun objectif défini pour cette activité",
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text("Aucun objectif défini pour cette activité", style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
       ),
@@ -268,37 +212,18 @@ class _GoalChip extends StatelessWidget {
   }
 }
 
-class _ControlsRow extends ConsumerStatefulWidget {
+class _ControlsCard extends ConsumerStatefulWidget {
   final String activityId;
   final bool isRunning;
   final bool isPaused;
-  final Duration elapsed;
-  final VoidCallback onChanged;
-
-  const _ControlsRow({
-    required this.activityId,
-    required this.isRunning,
-    required this.isPaused,
-    required this.elapsed,
-    required this.onChanged,
-  });
+  const _ControlsCard({required this.activityId, required this.isRunning, required this.isPaused});
 
   @override
-  ConsumerState<_ControlsRow> createState() => _ControlsRowState();
+  ConsumerState<_ControlsCard> createState() => _ControlsCardState();
 }
 
-class _ControlsRowState extends ConsumerState<_ControlsRow> {
+class _ControlsCardState extends ConsumerState<_ControlsCard> {
   bool _loading = false;
-
-  String _fmtElapsed(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    if (h > 0) {
-      return "${h}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
-    }
-    return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -310,37 +235,17 @@ class _ControlsRowState extends ConsumerState<_ControlsRow> {
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
         child: Column(
           children: [
-            // Badge live mm:ss
             Align(
               alignment: Alignment.centerRight,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      widget.isRunning
-                          ? (widget.isPaused ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded)
-                          : Icons.stop_circle_rounded,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _fmtElapsed(widget.elapsed),
-                      style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
-                    ),
-                  ],
-                ),
+              child: ElapsedBadge(
+                isRunning: widget.isRunning,
+                isPaused: widget.isPaused,
+                getElapsed: () => db.runningElapsed(widget.activityId),
               ),
             ),
 
             const SizedBox(height: 12),
 
-            // Boutons Start / Pause / Stop
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -351,12 +256,8 @@ class _ControlsRowState extends ConsumerState<_ControlsRow> {
                   label: const Text('Démarrer'),
                   onPressed: _loading || widget.isRunning ? null : () async {
                     setState(() => _loading = true);
-                    try {
-                      await db.start(widget.activityId);
-                    } finally {
-                      if (mounted) setState(() => _loading = false);
-                      widget.onChanged();
-                    }
+                    try { await db.start(widget.activityId); }
+                    finally { if (mounted) setState(() => _loading = false); }
                   },
                 ),
                 OutlinedButton.icon(
@@ -364,12 +265,8 @@ class _ControlsRowState extends ConsumerState<_ControlsRow> {
                   label: Text(widget.isPaused ? 'Reprendre' : 'Pause'),
                   onPressed: _loading || !widget.isRunning ? null : () async {
                     setState(() => _loading = true);
-                    try {
-                      await db.togglePause(widget.activityId);
-                    } finally {
-                      if (mounted) setState(() => _loading = false);
-                      widget.onChanged();
-                    }
+                    try { await db.togglePause(widget.activityId); }
+                    finally { if (mounted) setState(() => _loading = false); }
                   },
                 ),
                 FilledButton.icon(
@@ -388,14 +285,9 @@ class _ControlsRowState extends ConsumerState<_ControlsRow> {
                       ),
                     );
                     if (confirm != true) return;
-
                     setState(() => _loading = true);
-                    try {
-                      await db.stop(widget.activityId);
-                    } finally {
-                      if (mounted) setState(() => _loading = false);
-                      widget.onChanged();
-                    }
+                    try { await db.stop(widget.activityId); }
+                    finally { if (mounted) setState(() => _loading = false); }
                   },
                 ),
               ],

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart'; // dbProvider
-import '../services/database_models_adapters.dart'; // extension typée
+import '../services/database_models_adapters.dart';
+import '../services/database_service.dart'; // ✅ pour typer db
 
 class ActivityHistoryPage extends ConsumerStatefulWidget {
   final String activityId;
@@ -19,8 +20,7 @@ class ActivityHistoryPage extends ConsumerStatefulWidget {
 }
 
 class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
-  /// Filtre : 0 = aujourd’hui, 7, 30, -1 = tout
-  int _range = 7;
+  int _range = 7; // 0=today, 7, 30, -1=all
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +54,6 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
           }
           var rows = snap.data ?? const <_HistRow>[];
 
-          // Applique le filtre de période
           rows = _applyRangeFilter(rows, _range);
 
           if (rows.isEmpty) {
@@ -76,7 +75,6 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Titre jour + total
                       Row(
                         children: [
                           Expanded(child: Text(_fmtDay(g.date), style: Theme.of(context).textTheme.titleSmall)),
@@ -103,7 +101,7 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
     );
   }
 
-  Future<List<_HistRow>> _loadHistory(dynamic db, String activityId) async {
+  Future<List<_HistRow>> _loadHistory(DatabaseService db, String activityId) async {
     final sessions = db.listSessionsByActivityModel(activityId);
     final rows = <_HistRow>[];
 
@@ -132,10 +130,9 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
   }
 
   List<_HistRow> _applyRangeFilter(List<_HistRow> rows, int range) {
-    if (range == -1) return rows; // Tout
+    if (range == -1) return rows;
     final now = DateTime.now();
     if (range == 0) {
-      // Aujourd’hui
       return rows.where((r) => _isSameDay(r.start, now)).toList();
     }
     final since = now.subtract(Duration(days: range));
