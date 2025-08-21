@@ -1,18 +1,28 @@
-﻿import 'dart:async';
+﻿// lib/pages/activity_detail_page.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
-import '../providers.dart';              // dbProvider
-import '../providers_stats.dart';       // minutesTodayProvider, minutesThisWeekProvider, hourlyTodayProvider, lastNDaysProvider
-import '../widgets/activity_controls.dart';
-import '../widgets/activity_stats_panel.dart';
+import '../providers.dart';                // dbProvider, activitiesProvider (si présent)
+import '../services/database_models_adapters.dart'; // extensions typées sur DatabaseService
+import '../utils/color_compat.dart';
+
 import '../widgets/mini_heatmap.dart';
-import '../widgets/heatmap.dart';
+import '../widgets/activity_stats_panel.dart';
+import '../widgets/history_today_card.dart';
+
+import 'activity_history_page.dart';
+import 'heatmap_page.dart';
 
 class ActivityDetailPage extends ConsumerStatefulWidget {
-  final Activity activity;
-  const ActivityDetailPage({super.key, required this.activity});
+  final String activityId;
+
+  const ActivityDetailPage({
+    super.key,
+    required this.activityId,
+  });
 
   @override
   ConsumerState<ActivityDetailPage> createState() => _ActivityDetailPageState();
@@ -20,314 +30,378 @@ class ActivityDetailPage extends ConsumerStatefulWidget {
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   Timer? _ticker;
-  ProviderSubscription? _cancelDbListen;
-
-  @override
-  void initState() {
-    super.initState();
-    // Badge mm:ss en temps réel quand ça tourne
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      final db = ref.read(dbProvider);
-      if (db.isRunning(widget.activity.id) && mounted) setState(() {});
-    });
-
-    // Invalidation des providers de stats quand le DB bouge
-    _cancelDbListen = ref.listenManual(
-      dbProvider,
-          (prev, next) {
-        final id = widget.activity.id;
-        ref.invalidate(minutesTodayProvider(id));
-        ref.invalidate(minutesThisWeekProvider(id));
-        ref.invalidate(minutesThisMonthProvider(id));
-        ref.invalidate(minutesThisYearProvider(id));
-        ref.invalidate(hourlyTodayProvider(id));
-        ref.invalidate(lastNDaysProvider(LastNDaysArgs(activityId: id, n: 7)));
-        if (mounted) setState(() {});
-      },
-      fireImmediately: false,
-    );
-  }
 
   @override
   void dispose() {
     _ticker?.cancel();
-    _cancelDbListen?.close();
     super.dispose();
+  }
+
+  /// Démarre/arrête le tick d’1s selon l’état en cours.
+  void _updateTicker({required bool shouldTick}) {
+    if (shouldTick) {
+      if (_ticker == null || !_ticker!.isActive) {
+        _ticker?.cancel();
+        _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (mounted) setState(() {});
+        });
+      }
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final a  = widget.activity;
     final db = ref.watch(dbProvider);
 
-    final running = db.isRunning(a.id);
-    final paused  = db.isPaused(a.id);
-    final elapsed = db.runningElapsed(a.id);
-    final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+    // Récupère l’activité (depuis la source de vérité du service)
+    final Activity? activity = db.activities.firstWhere(
+          (a) => a.id == widget.activityId,
+      orElse: () => Activity(
+        id: widget.activityId,
+        name: 'Activité',
+        emoji: '⏱️',
+        color: Theme.of(context).colorScheme.primary,
+        dailyGoalMinutes: 0,
+        weeklyGoalMinutes: 0,
+        monthlyGoalMinutes: 0,
+        yearlyGoalMinutes: 0,
+      ),
+    );
 
-    final todayAsync = ref.watch(minutesTodayProvider(a.id));
+    final bool isRunning = db.isRunning(widget.activityId);
+    final bool isPaused  = db.isPaused(widget.activityId);
+    final Duration elapsed = db.runningElapsed(widget.activityId); // supposé inclure le temps actuel
+
+    // Active le tick seulement quand ça tourne et n’est pas en pause
+    _updateTicker(shouldTick: isRunning && !isPaused);
 
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            Text(a.emoji, style: const TextStyle(fontSize: 22)),
+            Text(activity?.emoji ?? '⏱️', style: const TextStyle(fontSize: 20)),
             const SizedBox(width: 8),
-            Expanded(
-              child: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-            if (running)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: (paused ? Colors.orange : Colors.green).withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: paused ? Colors.orange : Colors.green),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
-                  const SizedBox(width: 6),
-                  Text("$mm:$ss"),
-                ]),
-              ),
+            Expanded(child: Text(activity?.name ?? 'Activité')),
           ],
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          // Objectif du jour
-          todayAsync.when(
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-            data: (today) {
-              final goal = a.dailyGoalMinutes ?? 0;
-              if (goal <= 0) return const SizedBox.shrink();
-              if (today >= goal) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(children: const [
-                    Icon(Icons.check_circle, size: 18, color: Colors.green),
-                    SizedBox(width: 8),
-                    Text("Objectif du jour atteint"),
-                  ]),
-                );
-              }
-              final remain = goal - today;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text("Reste $remain min aujourd'hui"),
-              );
+        actions: [
+          // Accès direct à la Heatmap détaillée (90 jours)
+          IconButton(
+            tooltip: 'Heatmap détaillée',
+            icon: const Icon(Icons.grid_view_rounded),
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => ActivityHeatmapPage(
+                  activityId: widget.activityId,
+                  n: 90,
+                  baseColor: activity?.color ?? Theme.of(context).colorScheme.primary,
+                ),
+              ));
             },
-          ),
-
-          // Contrôles
-          Card(child: ActivityControls(activityId: a.id)),
-          const SizedBox(height: 12),
-
-          // Historique entre contrôles et graphs
-          _buildHistory(context, db, a.id),
-          const SizedBox(height: 12),
-
-          // Stats + mini heatmap
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        "7 derniers jours",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
-                      const Spacer(),
-                      MiniHeatmap(
-                        activityId: a.id,
-                        days: 28,
-                        baseColor: a.color,
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: "Heatmap détaillée",
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => HeatmapPage(activity: a)),
-                          );
-                        },
-                        icon: const Icon(Icons.grid_view),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ActivityStatsPanel(activityId: a.id),
-                ],
-              ),
-            ),
           ),
         ],
       ),
-    );
-  }
+      body: RefreshIndicator(
+        onRefresh: () async {
+          // Si tu as un mécanisme de reload, déclenche-le ici.
+          setState(() {});
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // En-tête : couleur + objectifs rapides (si renseignés)
+              _HeaderInfo(activity: activity),
 
-  /// =======================
-  /// Historique des sessions
-  /// =======================
-  Widget _buildHistory(BuildContext context, dynamic db, String activityId) {
-    // On ne suppose plus le type exact (Session vs DbSession)
-    final raw = (db.listSessionsByActivity(activityId) as List);
-    final sessions = raw.map((e) => _Sess.from(e)).toList();
+              const SizedBox(height: 12),
 
-    if (sessions.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text(
-            "Aucune session pour l’instant.",
-            style: Theme.of(context).textTheme.bodyMedium,
+              // Contrôles + badge live mm:ss
+              _ControlsRow(
+                activityId: widget.activityId,
+                isRunning: isRunning,
+                isPaused: isPaused,
+                elapsed: elapsed,
+                onChanged: () => setState(() {}),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Historique du jour (typé)
+              HistoryTodayCard(
+                activityId: widget.activityId,
+                activityName: activity?.name ?? 'Activité',
+                maxRows: 5,
+              ),
+
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ActivityHistoryPage(
+                        activityId: widget.activityId,
+                        activityName: activity?.name ?? 'Activité',
+                      ),
+                    ));
+                  },
+                  icon: const Icon(Icons.history),
+                  label: const Text('Voir tout l’historique'),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Mini-heatmap riche (28 jours)
+              Card(
+                elevation: 0,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Aperçu (28 jours)', style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      MiniHeatmap(
+                        activityId: widget.activityId,
+                        days: 28,
+                        baseColor: activity?.color ?? Theme.of(context).colorScheme.primary,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Stats (aujourd’hui/semaine/mois/année + graphes)
+              Card(
+                elevation: 0,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: ActivityStatsPanel(activityId: widget.activityId),
+                ),
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    );
+  }
+}
+
+class _HeaderInfo extends StatelessWidget {
+  final Activity? activity;
+  const _HeaderInfo({required this.activity});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = activity?.color ?? Theme.of(context).colorScheme.primary;
+    final rows = <Widget>[];
+
+    // Objectifs s’ils existent
+    if ((activity?.dailyGoalMinutes ?? 0) > 0) {
+      rows.add(_GoalChip(icon: Icons.today,   label: "${activity!.dailyGoalMinutes} min/jour",   color: c));
+    }
+    if ((activity?.weeklyGoalMinutes ?? 0) > 0) {
+      rows.add(_GoalChip(icon: Icons.calendar_view_week, label: "${activity!.weeklyGoalMinutes} min/sem.", color: c));
+    }
+    if ((activity?.monthlyGoalMinutes ?? 0) > 0) {
+      rows.add(_GoalChip(icon: Icons.calendar_view_month, label: "${activity!.monthlyGoalMinutes} min/mois", color: c));
+    }
+    if ((activity?.yearlyGoalMinutes ?? 0) > 0) {
+      rows.add(_GoalChip(icon: Icons.event, label: "${activity!.yearlyGoalMinutes} min/an", color: c));
     }
 
-    sessions.sort((a, b) => (b.startAt ?? DateTime(1970))
-        .compareTo(a.startAt ?? DateTime(1970)));
-
     return Card(
+      elevation: 0,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Historique", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            ...sessions.map((s) {
-              final start = s.startAt;
-              final end   = s.endAt;
-
-              final title = start != null
-                  ? "${start.year}-${start.month.toString().padLeft(2,'0')}-${start.day.toString().padLeft(2,'0')}  "
-                  "${start.hour.toString().padLeft(2,'0')}:${start.minute.toString().padLeft(2,'0')}"
-                  : "(début inconnu)";
-
-              final pauses = db.listPausesBySession(activityId, s.id) as List;
-              final totalPaused = pauses.fold<Duration>(
-                Duration.zero,
-                    (acc, p) {
-                  try {
-                    final ps = p.startAt as DateTime?;
-                    final pe = (p.endAt as DateTime?) ?? DateTime.now();
-                    if (ps == null) return acc;
-                    return acc + pe.difference(ps);
-                  } catch (_) {
-                    return acc;
-                  }
-                },
-              );
-
-              Duration effective;
-              if (start == null) {
-                effective = Duration.zero;
-              } else {
-                final stop = end ?? DateTime.now();
-                final full = stop.difference(start);
-                effective = full - totalPaused;
-                if (effective.isNegative) effective = Duration.zero;
-              }
-
-              final mins = effective.inMinutes;
-              return ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-                subtitle: pauses.isEmpty
-                    ? const Text("Aucune pause")
-                    : Text("${pauses.length} pause(s) • ${_fmtDuration(totalPaused)}"),
-                trailing: Text("$mins min", style: const TextStyle(fontWeight: FontWeight.w600)),
-              );
-            }),
+            // Bandeau couleur activité
+            Container(
+              height: 6,
+              decoration: BoxDecoration(
+                color: c.withAlphaCompat(.8),
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (rows.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: rows,
+              )
+            else
+              Text(
+                "Aucun objectif défini pour cette activité",
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
           ],
         ),
       ),
     );
   }
-
-  String _fmtDuration(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    if (h > 0) return "${h}h${m.toString().padLeft(2, '0')}";
-    return "${m}m";
-  }
 }
 
-/// Petit adaptateur local pour uniformiser Session/DbSession
-class _Sess {
-  final String id;
-  final DateTime? startAt;
-  final DateTime? endAt;
-
-  _Sess({required this.id, this.startAt, this.endAt});
-
-  factory _Sess.from(dynamic s) {
-    try {
-      // Classes avec champs .id, .startAt, .endAt
-      return _Sess(
-        id: s.id as String,
-        startAt: s.startAt as DateTime?,
-        endAt: s.endAt as DateTime?,
-      );
-    } catch (_) {
-      if (s is Map) {
-        return _Sess(
-          id: (s['id'] ?? '').toString(),
-          startAt: s['startAt'] as DateTime?,
-          endAt: s['endAt'] as DateTime?,
-        );
-      }
-      // Fallback très permissif
-      return _Sess(id: (s?.id ?? '').toString(), startAt: null, endAt: null);
-    }
-  }
-}
-
-/// Heatmap détaillée
-class HeatmapPage extends ConsumerWidget {
-  final Activity activity;
-  const HeatmapPage({super.key, required this.activity});
+class _GoalChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _GoalChip({required this.icon, required this.label, required this.color});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final base  = activity.color;
-    final stats = ref.watch(
-      lastNDaysProvider(LastNDaysArgs(activityId: activity.id, n: 90)),
+  Widget build(BuildContext context) {
+    return Chip(
+      avatar: Icon(icon, size: 16, color: color),
+      label: Text(label),
+      side: BorderSide(color: color.withAlphaCompat(.4)),
+      backgroundColor: color.withAlphaCompat(.08),
     );
+  }
+}
 
-    return Scaffold(
-      appBar: AppBar(title: Text("${activity.emoji} ${activity.name} — Heatmap")),
-      body: stats.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text("Erreur: $e")),
-        data: (days) {
-          final map = <DateTime, int>{for (final d in days) d.date: d.minutes};
-          return ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              Card(
-                clipBehavior: Clip.antiAlias,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Heatmap(
-                    data: map,
-                    baseColor: base,
-                  ),
+class _ControlsRow extends ConsumerStatefulWidget {
+  final String activityId;
+  final bool isRunning;
+  final bool isPaused;
+  final Duration elapsed;
+  final VoidCallback onChanged;
+
+  const _ControlsRow({
+    required this.activityId,
+    required this.isRunning,
+    required this.isPaused,
+    required this.elapsed,
+    required this.onChanged,
+  });
+
+  @override
+  ConsumerState<_ControlsRow> createState() => _ControlsRowState();
+}
+
+class _ControlsRowState extends ConsumerState<_ControlsRow> {
+  bool _loading = false;
+
+  String _fmtElapsed(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    if (h > 0) {
+      return "${h}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+    }
+    return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final db = ref.watch(dbProvider);
+
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          children: [
+            // Badge live mm:ss
+            Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      widget.isRunning
+                          ? (widget.isPaused ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded)
+                          : Icons.stop_circle_rounded,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _fmtElapsed(widget.elapsed),
+                      style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          );
-        },
+            ),
+
+            const SizedBox(height: 12),
+
+            // Boutons Start / Pause / Stop
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Démarrer'),
+                  onPressed: _loading || widget.isRunning ? null : () async {
+                    setState(() => _loading = true);
+                    try {
+                      await db.start(widget.activityId);
+                    } finally {
+                      if (mounted) setState(() => _loading = false);
+                      widget.onChanged();
+                    }
+                  },
+                ),
+                OutlinedButton.icon(
+                  icon: Icon(widget.isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
+                  label: Text(widget.isPaused ? 'Reprendre' : 'Pause'),
+                  onPressed: _loading || !widget.isRunning ? null : () async {
+                    setState(() => _loading = true);
+                    try {
+                      await db.togglePause(widget.activityId);
+                    } finally {
+                      if (mounted) setState(() => _loading = false);
+                      widget.onChanged();
+                    }
+                  },
+                ),
+                FilledButton.icon(
+                  icon: const Icon(Icons.stop_rounded),
+                  label: const Text('Stop'),
+                  onPressed: _loading || !widget.isRunning ? null : () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Arrêter la session ?'),
+                        content: const Text('La durée sera enregistrée.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Annuler')),
+                          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Stop')),
+                        ],
+                      ),
+                    );
+                    if (confirm != true) return;
+
+                    setState(() => _loading = true);
+                    try {
+                      await db.stop(widget.activityId);
+                    } finally {
+                      if (mounted) setState(() => _loading = false);
+                      widget.onChanged();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

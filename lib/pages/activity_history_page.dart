@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart'; // dbProvider
+import '../services/database_models_adapters.dart'; // extension typée
 
 class ActivityHistoryPage extends ConsumerStatefulWidget {
   final String activityId;
@@ -18,13 +19,13 @@ class ActivityHistoryPage extends ConsumerStatefulWidget {
 }
 
 class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
-  /// Filtre de période.
-  /// 0 = Aujourd’hui, 7 = 7 jours, 30 = 30 jours, -1 = tout
-  int _range = -1;
+  /// Filtre : 0 = aujourd’hui, 7, 30, -1 = tout
+  int _range = 7;
 
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: Text("Historique • ${widget.activityName}"),
@@ -57,51 +58,40 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
           rows = _applyRangeFilter(rows, _range);
 
           if (rows.isEmpty) {
-            return const Center(child: Text("Aucune session."));
+            return const Center(child: Text("Aucune session"));
           }
 
-          final grouped = _groupByDay(rows);
+          final groups = _groupByDay(rows);
 
-          return ListView.separated(
+          return ListView.builder(
             padding: const EdgeInsets.all(12),
-            itemCount: grouped.length,
-            separatorBuilder: (_, __) => const Divider(height: 16),
-            itemBuilder: (_, gi) {
-              final g = grouped[gi];
-              final totalMinutes = g.rows.fold<int>(0, (sum, r) => sum + r.effectiveMinutes);
-
+            itemCount: groups.length,
+            itemBuilder: (context, i) {
+              final g = groups[i];
+              final total = g.rows.fold<int>(0, (a, r) => a + r.effectiveMinutes);
               return Card(
-                elevation: 0,
+                margin: const EdgeInsets.only(bottom: 12),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // En-tête jour + total du jour
+                      // Titre jour + total
                       Row(
                         children: [
-                          Text(_fmtDay(g.date), style: Theme.of(context).textTheme.titleMedium),
-                          const Spacer(),
+                          Expanded(child: Text(_fmtDay(g.date), style: Theme.of(context).textTheme.titleSmall)),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.blueGrey.withOpacity(.10),
-                              borderRadius: BorderRadius.circular(999),
+                              color: Theme.of(context).colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.summarize, size: 14),
-                                const SizedBox(width: 6),
-                                Text("Total : ${_fmtDuration(totalMinutes)}",
-                                    style: Theme.of(context).textTheme.labelMedium),
-                              ],
-                            ),
+                            child: Text("${total} min", style: Theme.of(context).textTheme.labelLarge),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      ...g.rows.map((r) => _HistoryRowTile(r: r)),
+                      const SizedBox(height: 8),
+                      ...g.rows.map((r) => _HistoryRowTile(row: r)),
                     ],
                   ),
                 ),
@@ -114,69 +104,30 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
   }
 
   Future<List<_HistRow>> _loadHistory(dynamic db, String activityId) async {
-    List<dynamic> sessions = [];
-    try {
-      final res = await db.listSessionsByActivity(activityId);
-      if (res is List) sessions = res;
-    } catch (_) {}
-    if (sessions.isEmpty) {
-      try {
-        final res = await db.sessionsByActivity(activityId);
-        if (res is List) sessions = res;
-      } catch (_) {}
-    }
-    if (sessions.isEmpty) {
-      try {
-        final all = db.sessions;
-        if (all is List) {
-          sessions = all.where((s) => _stringField(s, 'activityId') == activityId).toList();
-        }
-      } catch (_) {}
-    }
-
-    // Tri décroissant par début de session
-    sessions.sort((a, b) {
-      final sa = _dateField(a, 'startAt') ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final sb = _dateField(b, 'startAt') ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return sb.compareTo(sa);
-    });
-
+    final sessions = db.listSessionsByActivityModel(activityId);
     final rows = <_HistRow>[];
+
     for (final s in sessions) {
-      final start = _dateField(s, 'startAt');
-      if (start == null) continue;
-      final end = _dateField(s, 'endAt');
+      final start = s.startAt;
+      final end = s.endAt ?? DateTime.now();
+      final pauses = db.listPausesBySessionModel(activityId, s.id);
+      final eff = db.effectiveDurationFor(s, pauses);
 
-      final totalMinutes = ((end ?? DateTime.now()).difference(start).inSeconds / 60).round();
-
-      // Pauses
-      int pausedMinutes = 0;
-      List<dynamic> pauses = [];
-      try {
-        final res = await db.listPausesBySession(_idOf(s));
-        if (res is List) pauses = res;
-      } catch (_) {
-        try {
-          final all = db.pauses;
-          if (all is List) {
-            pauses = all.where((p) => _stringField(p, 'sessionId') == _idOf(s)).toList();
-          }
-        } catch (_) {}
-      }
-      for (final p in pauses) {
-        final ps = _dateField(p, 'startAt');
-        final pe = _dateField(p, 'endAt');
-        if (ps == null) continue;
-        final pend = pe ?? DateTime.now();
-        pausedMinutes += ((pend.difference(ps).inSeconds) / 60).round();
-      }
+      final paused = pauses.fold<int>(0, (acc, p) {
+        final pe = p.endAt ?? end;
+        if (pe.isAfter(p.startAt)) return acc + pe.difference(p.startAt).inMinutes;
+        return acc;
+      });
 
       rows.add(_HistRow(
         start: start,
-        end: end,
-        effectiveMinutes: (totalMinutes - pausedMinutes).clamp(0, 1000000),
+        end: s.endAt,
+        effectiveMinutes: eff.inMinutes,
+        pausesMinutes: paused,
       ));
     }
+
+    rows.sort((a, b) => b.start.compareTo(a.start));
     return rows;
   }
 
@@ -202,14 +153,9 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
       final date = DateTime(parts[0], parts[1], parts[2]);
       final list = e.value..sort((a, b) => a.start.compareTo(b.start));
       return _HistGroup(date: date, rows: list);
-    }).toList();
-    groups.sort((a, b) => b.date.compareTo(a.date));
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
     return groups;
-  }
-
-  String _dayKey(DateTime d) {
-    final local = d.toLocal();
-    return "${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}";
   }
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -217,49 +163,14 @@ class _ActivityHistoryPageState extends ConsumerState<ActivityHistoryPage> {
     return al.year == bl.year && al.month == bl.month && al.day == bl.day;
   }
 
-  String _idOf(dynamic obj) {
-    try {
-      final v = obj.id;
-      if (v is String) return v;
-      return "$v";
-    } catch (_) {
-      return "";
-    }
+  String _dayKey(DateTime d) {
+    final dl = d.toLocal();
+    return "${dl.year}-${dl.month.toString().padLeft(2, '0')}-${dl.day.toString().padLeft(2, '0')}";
   }
 
-  String _stringField(dynamic obj, String name) {
-    try {
-      final v = obj.toJson?.call()[name];
-      if (v is String) return v;
-    } catch (_) {}
-    try {
-      final v = (obj as dynamic);
-      final val = v?.map?[name];
-      if (val is String) return val;
-    } catch (_) {}
-    try {
-      final v = (obj as dynamic);
-      final val = (name == 'activityId') ? v.activityId : v.sessionId;
-      if (val is String) return val;
-    } catch (_) {}
-    return "";
-  }
-
-  DateTime? _dateField(dynamic obj, String name) {
-    try {
-      final v = obj.toJson?.call()[name];
-      if (v is DateTime) return v;
-      if (v is String) return DateTime.tryParse(v);
-      if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
-    } catch (_) {}
-    try {
-      final v = (obj as dynamic);
-      final val = (name == 'startAt') ? v.startAt : v.endAt;
-      if (val is DateTime) return val;
-      if (val is String) return DateTime.tryParse(val);
-      if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
-    } catch (_) {}
-    return null;
+  String _fmtDay(DateTime d) {
+    final dl = d.toLocal();
+    return "${dl.day.toString().padLeft(2, '0')}/${dl.month.toString().padLeft(2, '0')}/${dl.year}";
   }
 }
 
@@ -267,7 +178,8 @@ class _HistRow {
   final DateTime start;
   final DateTime? end;
   final int effectiveMinutes;
-  _HistRow({required this.start, required this.end, required this.effectiveMinutes});
+  final int pausesMinutes;
+  _HistRow({required this.start, required this.end, required this.effectiveMinutes, required this.pausesMinutes});
 }
 
 class _HistGroup {
@@ -277,53 +189,32 @@ class _HistGroup {
 }
 
 class _HistoryRowTile extends StatelessWidget {
-  final _HistRow r;
-  const _HistoryRowTile({required this.r});
+  final _HistRow row;
+  const _HistoryRowTile({required this.row});
 
   @override
   Widget build(BuildContext context) {
-    final timeStr = "${_fmtTime(r.start)}–${r.end == null ? 'en cours' : _fmtTime(r.end!)}";
-    final durStr = _fmtDuration(r.effectiveMinutes);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text(timeStr, overflow: TextOverflow.ellipsis)),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.green.withOpacity(.10),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(durStr, style: Theme.of(context).textTheme.labelMedium),
-          ),
-        ],
-      ),
+    final title = _fmtTimeRange(context, row.start, row.end);
+    final eff = _fmtDuration(Duration(minutes: row.effectiveMinutes));
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle: row.pausesMinutes == 0 ? const Text("Aucune pause") : Text("${row.pausesMinutes} min de pause"),
+      trailing: Text(eff, style: const TextStyle(fontWeight: FontWeight.w600)),
     );
   }
-}
 
-String _fmtDay(DateTime d) {
-  final local = d.toLocal();
-  final y = local.year.toString().padLeft(4, '0');
-  final m = local.month.toString().padLeft(2, '0');
-  final dd = local.day.toString().padLeft(2, '0');
-  return "$y-$m-$dd";
-}
+  String _fmtTimeRange(BuildContext context, DateTime start, DateTime? end) {
+    final s = TimeOfDay.fromDateTime(start).format(context);
+    final e = end == null ? 'en cours…' : TimeOfDay.fromDateTime(end).format(context);
+    return "$s → $e";
+  }
 
-String _fmtTime(DateTime d) {
-  final local = d.toLocal();
-  final h = local.hour.toString().padLeft(2, '0');
-  final min = local.minute.toString().padLeft(2, '0');
-  return "$h:$min";
-}
-
-String _fmtDuration(int minutes) {
-  if (minutes < 60) return "${minutes}m";
-  final h = minutes ~/ 60;
-  final m = minutes % 60;
-  if (m == 0) return "${h}h";
-  return "${h}h${m}m";
+  String _fmtDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    if (h > 0) return "${h}h${m.toString().padLeft(2, '0')}";
+    return "${m}m";
+  }
 }
