@@ -1,221 +1,205 @@
-﻿import 'dart:collection';
-import 'dart:math';
-import 'package:flutter/material.dart';
+﻿import 'package:isar/isar.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/activity.dart';
 import '../models/session.dart';
 import '../models/pause.dart';
 
-class DatabaseService extends ChangeNotifier {
-  // ---------- Activités ----------
-  final List<Activity> _activities = <Activity>[];
-  List<Activity> get activities => UnmodifiableListView(_activities);
+class DatabaseService {
+  static final DatabaseService _i = DatabaseService._();
+  DatabaseService._();
+  factory DatabaseService() => _i;
 
-  Future<Activity> createActivity({
+  Isar? _isar;
+
+  Future<Isar> _getIsar() async {
+    if (_isar != null) return _isar!;
+    final dir = await getApplicationDocumentsDirectory();
+    _isar = await Isar.open(
+      schemas: [ActivitySchema, SessionSchema, PauseSchema],
+      directory: dir.path,
+      inspector: false,
+    );
+    return _isar!;
+  }
+
+  // ---------------- Activities ----------------
+
+  Future<Activity> upsertActivity({
+    required String uid,
     required String name,
     required String emoji,
-    required Color color,
+    required int colorValue,
     int? dailyGoalMinutes,
     int? weeklyGoalMinutes,
     int? monthlyGoalMinutes,
     int? yearlyGoalMinutes,
   }) async {
-    final a = Activity(
-      id: _genId(),
-      name: name,
-      emoji: emoji,
-      color: color,
-      dailyGoalMinutes: dailyGoalMinutes,
-      weeklyGoalMinutes: weeklyGoalMinutes,
-      monthlyGoalMinutes: monthlyGoalMinutes,
-      yearlyGoalMinutes: yearlyGoalMinutes,
-    );
-    _activities.add(a);
-    notifyListeners();
-    return a;
+    final isar = await _getIsar();
+    final existing = await isar.activitys.filter().uidEqualTo(uid).findFirst();
+
+    final act = existing ?? (Activity()..uid = uid);
+    act
+      ..name = name
+      ..emoji = emoji
+      ..colorValue = colorValue
+      ..dailyGoalMinutes = dailyGoalMinutes
+      ..weeklyGoalMinutes = weeklyGoalMinutes
+      ..monthlyGoalMinutes = monthlyGoalMinutes
+      ..yearlyGoalMinutes = yearlyGoalMinutes;
+
+    await isar.writeTxn(() async => await isar.activitys.put(act));
+    return act;
   }
 
-  void deleteActivity(String activityId) {
-    _activities.removeWhere((a) => a.id == activityId);
-    // supprime sessions/pauses liées
-    final sessionIds = _sessions.where((s) => s.activityId == activityId).map((s) => s.id).toSet();
-    _sessions.removeWhere((s) => s.activityId == activityId);
-    _pausesBySession.removeWhere((sid, _) => sessionIds.contains(sid));
-    _running.remove(activityId);
-    _currentPause.remove(activityId);
-    notifyListeners();
+  Future<List<Activity>> listActivities() async {
+    final isar = await _getIsar();
+    return isar.activitys.where().sortByName().findAll();
   }
 
-  // ---------- Sessions & Pauses ----------
-  final List<Session> _sessions = <Session>[];
-  final Map<String, List<Pause>> _pausesBySession = <String, List<Pause>>{};
-
-  List<Session> listSessionsByActivity(String activityId) {
-    final out = _sessions.where((s) => s.activityId == activityId).toList();
-    out.sort((a, b) => b.startAt.compareTo(a.startAt));
-    return out;
+  Future<Activity?> getActivityByUid(String uid) async {
+    final isar = await _getIsar();
+    return isar.activitys.filter().uidEqualTo(uid).findFirst();
   }
 
-  List<Pause> listPausesBySession(String sessionId) {
-    final list = _pausesBySession[sessionId] ?? const <Pause>[];
-    final out = List<Pause>.from(list);
-    out.sort((a, b) => a.startAt.compareTo(b.startAt));
-    return out;
-  }
-
-  // --- Compat (anciens appels) ---
-  List<Session> listSessionsByActivityModel(String activityId) =>
-      listSessionsByActivity(activityId);
-  List<Pause> listPausesBySessionModel(String activityId, String sessionId) =>
-      listPausesBySession(sessionId);
-
-  // ---------- Timer état courant ----------
-  final Map<String, Session> _running = <String, Session>{};   // activityId -> session ouverte
-  final Map<String, Pause> _currentPause = <String, Pause>{};  // activityId -> pause ouverte
-
-  bool isRunning(String activityId) => _running.containsKey(activityId);
-  bool isPaused(String activityId) => _currentPause.containsKey(activityId);
-
-  Duration runningElapsed(String activityId) {
-    final s = _running[activityId];
-    if (s == null) return Duration.zero;
-
-    final now = DateTime.now();
-    int sec = now.difference(s.startAt).inSeconds;
-
-    // soustraire pauses (y compris pause courante)
-    final allPauses = <Pause>[];
-    allPauses.addAll(_pausesBySession[s.id] ?? const []);
-    final cp = _currentPause[activityId];
-    if (cp != null && cp.endAt == null) {
-      allPauses.add(cp);
-    }
-    for (final p in allPauses) {
-      final pe = p.endAt ?? now;
-      sec -= _overlapSec(s.startAt, now, p.startAt, pe);
-    }
-    if (sec < 0) sec = 0;
-    return Duration(seconds: sec);
-  }
-
-  // ---------- Timer actions ----------
-  Future<void> start(String activityId) async {
-    if (_running[activityId] != null) return;
-    final s = Session(
-      id: _genId(),
-      activityId: activityId,
-      startAt: DateTime.now(),
-    );
-    _running[activityId] = s;
-    _sessions.add(s);
-    notifyListeners();
-  }
-
-  Future<void> togglePause(String activityId) async {
-    final s = _running[activityId];
-    if (s == null) return;
-
-    final current = _currentPause[activityId];
-    if (current == null) {
-      final p = Pause(
-        id: _genId(),
-        sessionId: s.id,
-        activityId: activityId,
-        startAt: DateTime.now(),
-      );
-      (_pausesBySession[s.id] ??= <Pause>[]).add(p);
-      _currentPause[activityId] = p;
-    } else {
-      final ended = current.copyWith(endAt: DateTime.now());
-      final list = _pausesBySession[s.id];
-      if (list != null) {
-        final idx = list.indexWhere((x) => x.id == current.id);
-        if (idx >= 0) list[idx] = ended;
+  Future<void> deleteActivity(String uid) async {
+    final isar = await _getIsar();
+    final a = await getActivityByUid(uid);
+    if (a == null) return;
+    await isar.writeTxn(() async {
+      final sessions = await isar.sessions.filter().activityUidEqualTo(uid).findAll();
+      for (final s in sessions) {
+        await isar.pauses.filter().sessionIdEqualTo(s.id).deleteAll();
       }
-      _currentPause.remove(activityId);
-    }
-    notifyListeners();
+      await isar.sessions.filter().activityUidEqualTo(uid).deleteAll();
+      await isar.activitys.delete(a.id);
+    });
   }
 
-  Future<void> stop(String activityId) async {
-    final s = _running.remove(activityId);
+  // ---------------- Sessions ----------------
+
+  Future<Session> startSession(String activityUid, DateTime now) async {
+    final isar = await _getIsar();
+    final s = Session()
+      ..activityUid = activityUid
+      ..startAt = now;
+    await isar.writeTxn(() async => await isar.sessions.put(s));
+    return s;
+  }
+
+  Future<Session?> getRunningSession(String activityUid) async {
+    final isar = await _getIsar();
+    return isar.sessions
+        .filter()
+        .activityUidEqualTo(activityUid)
+        .endAtIsNull()
+        .sortByStartAtDesc()
+        .findFirst();
+  }
+
+  Future<void> stopSession(Id sessionId, DateTime now) async {
+    final isar = await _getIsar();
+    final s = await isar.sessions.get(sessionId);
     if (s == null) return;
-
-    // fermer pause courante s'il y en a une
-    final current = _currentPause.remove(activityId);
-    if (current != null) {
-      final ended = current.copyWith(endAt: DateTime.now());
-      final list = _pausesBySession[s.id];
-      if (list != null) {
-        final idx = list.indexWhere((x) => x.id == current.id);
-        if (idx >= 0) list[idx] = ended;
-      }
-    }
-
-    // clôturer la session
-    final idxS = _sessions.indexWhere((x) => x.id == s.id);
-    if (idxS >= 0) _sessions[idxS] = s.copyWith(endAt: DateTime.now());
-
-    notifyListeners();
+    s.endAt ??= now;
+    await isar.writeTxn(() async => await isar.sessions.put(s));
   }
 
-  // ---------- Calculs ----------
-  /// Durée effective d’une session donnée, à partir d’une liste de pauses (déjà triées).
-  Duration effectiveDurationFor(Session s, List<Pause> pauses) {
-    final end = s.endAt ?? DateTime.now();
-    int sec = end.difference(s.startAt).inSeconds;
-    for (final p in pauses) {
-      final pe = p.endAt ?? end;
-      sec -= _overlapSec(s.startAt, end, p.startAt, pe);
-    }
-    if (sec < 0) sec = 0;
-    return Duration(seconds: sec);
+  Future<List<Session>> listSessionsByActivityUid(String activityUid) async {
+    final isar = await _getIsar();
+    return isar.sessions
+        .filter()
+        .activityUidEqualTo(activityUid)
+        .sortByStartAtDesc()
+        .findAll();
   }
 
-  /// Minutes loggées pour une activité sur un jour (00:00 → 24:00).
-  int effectiveMinutesOnDay(String activityId, DateTime day) {
-    final dayStart = DateTime(day.year, day.month, day.day);
-    final dayEnd = dayStart.add(const Duration(days: 1));
-    final now = DateTime.now();
+  // ---------------- Pauses ----------------
+
+  Future<Pause> startPause({
+    required String activityUid,
+    required Id sessionId,
+    required DateTime now,
+  }) async {
+    final isar = await _getIsar();
+    final p = Pause()
+      ..activityUid = activityUid
+      ..sessionId = sessionId
+      ..startAt = now;
+    await isar.writeTxn(() async => await isar.pauses.put(p));
+    return p;
+  }
+
+  Future<void> stopPause(Id pauseId, DateTime now) async {
+    final isar = await _getIsar();
+    final p = await isar.pauses.get(pauseId);
+    if (p == null) return;
+    p.endAt ??= now;
+    await isar.writeTxn(() async => await isar.pauses.put(p));
+  }
+
+  Future<List<Pause>> listPausesBySession(Id sessionId) async {
+    final isar = await _getIsar();
+    return isar.pauses.filter().sessionIdEqualTo(sessionId).findAll();
+  }
+
+  // ---------------- Calculs / Stats ----------------
+
+  /// Minutes effectives sur un jour (sessions - pauses chevauchantes)
+  Future<int> effectiveMinutesOnDay({
+    required String activityUid,
+    required DateTime date,
+  }) async {
+    final isar = await _getIsar();
+    final start = DateTime(date.year, date.month, date.day);
+    final end = start.add(const Duration(days: 1));
+
+    final sessions = await isar.sessions
+        .filter()
+        .activityUidEqualTo(activityUid)
+        .startAtLessThan(end)
+        .and()
+        .group((q) => q.endAtGreaterThan(start).or().endAtIsNull())
+        .findAll();
 
     int minutes = 0;
-
-    // sessions recoupant le jour
-    final sessions = _sessions.where((s) =>
-    s.activityId == activityId &&
-        s.startAt.isBefore(dayEnd) &&
-        (s.endAt ?? now).isAfter(dayStart));
-
     for (final s in sessions) {
-      final sFrom = s.startAt.isAfter(dayStart) ? s.startAt : dayStart;
-      final sTo = (s.endAt ?? now).isBefore(dayEnd) ? (s.endAt ?? now) : dayEnd;
+      final sStart = s.startAt.isBefore(start) ? start : s.startAt;
+      final sEnd = (s.endAt ?? DateTime.now()).isAfter(end) ? end : (s.endAt ?? DateTime.now());
+      if (!sEnd.isAfter(sStart)) continue;
 
-      // pauses de la session (inclut pause courante si ouverte sur cette session)
-      final pauses = <Pause>[];
-      pauses.addAll(_pausesBySession[s.id] ?? const []);
-      final cp = _currentPause[activityId];
-      if (cp != null && cp.sessionId == s.id && cp.endAt == null) {
-        pauses.add(cp);
-      }
+      var effMs = sEnd.difference(sStart).inMilliseconds;
 
-      int sec = sTo.difference(sFrom).inSeconds;
+      final pauses = await listPausesBySession(s.id);
       for (final p in pauses) {
-        final pe = p.endAt ?? sTo;
-        sec -= _overlapSec(sFrom, sTo, p.startAt, pe);
+        final pStart = p.startAt.isBefore(start) ? start : p.startAt;
+        final pEnd = (p.endAt ?? DateTime.now()).isAfter(end) ? end : (p.endAt ?? DateTime.now());
+        final overlapStart = pStart.isAfter(sStart) ? pStart : sStart;
+        final overlapEnd = pEnd.isBefore(sEnd) ? pEnd : sEnd;
+        if (overlapEnd.isAfter(overlapStart)) {
+          effMs -= overlapEnd.difference(overlapStart).inMilliseconds;
+        }
       }
-      if (sec > 0) minutes += sec ~/ 60;
+      minutes += (effMs ~/ 60000);
     }
-
-    return max(0, minutes);
+    return minutes;
   }
 
-  // ---------- Helpers ----------
-  int _overlapSec(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd) {
-    final s = aStart.isAfter(bStart) ? aStart : bStart;
-    final e = aEnd.isBefore(bEnd) ? aEnd : bEnd;
-    final d = e.difference(s).inSeconds;
-    return d > 0 ? d : 0;
-  }
+  /// Durée effective d’une session (utile pour historiques)
+  Future<Duration> effectiveDurationFor(Session s) async {
+    final isar = await _getIsar();
+    final end = s.endAt ?? DateTime.now();
+    var effMs = end.difference(s.startAt).inMilliseconds;
 
-  String _genId() => DateTime.now().microsecondsSinceEpoch.toString();
+    final pauses = await isar.pauses.filter().sessionIdEqualTo(s.id).findAll();
+    for (final p in pauses) {
+      final pEnd = p.endAt ?? DateTime.now();
+      final overlapStart = p.startAt.isAfter(s.startAt) ? p.startAt : s.startAt;
+      final overlapEnd = pEnd.isBefore(end) ? pEnd : end;
+      if (overlapEnd.isAfter(overlapStart)) {
+        effMs -= overlapEnd.difference(overlapStart).inMilliseconds;
+      }
+    }
+    return Duration(milliseconds: effMs < 0 ? 0 : effMs);
+  }
 }

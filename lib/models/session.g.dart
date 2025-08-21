@@ -20,21 +20,16 @@ const SessionSchema = CollectionSchema(
     r'activityId': PropertySchema(
       id: 0,
       name: r'activityId',
-      type: IsarType.string,
+      type: IsarType.long,
     ),
-    r'endAt': PropertySchema(
+    r'endedAt': PropertySchema(
       id: 1,
-      name: r'endAt',
+      name: r'endedAt',
       type: IsarType.dateTime,
     ),
-    r'id': PropertySchema(
+    r'startedAt': PropertySchema(
       id: 2,
-      name: r'id',
-      type: IsarType.string,
-    ),
-    r'startAt': PropertySchema(
-      id: 3,
-      name: r'startAt',
+      name: r'startedAt',
       type: IsarType.dateTime,
     )
   },
@@ -42,21 +37,8 @@ const SessionSchema = CollectionSchema(
   serialize: _sessionSerialize,
   deserialize: _sessionDeserialize,
   deserializeProp: _sessionDeserializeProp,
-  idName: r'isarId',
+  idName: r'id',
   indexes: {
-    r'id': IndexSchema(
-      id: -3268401673993471357,
-      name: r'id',
-      unique: true,
-      replace: true,
-      properties: [
-        IndexPropertySchema(
-          name: r'id',
-          type: IndexType.hash,
-          caseSensitive: true,
-        )
-      ],
-    ),
     r'activityId': IndexSchema(
       id: 8968520805042838249,
       name: r'activityId',
@@ -65,19 +47,6 @@ const SessionSchema = CollectionSchema(
       properties: [
         IndexPropertySchema(
           name: r'activityId',
-          type: IndexType.hash,
-          caseSensitive: true,
-        )
-      ],
-    ),
-    r'startAt': IndexSchema(
-      id: 4187465024431158613,
-      name: r'startAt',
-      unique: false,
-      replace: false,
-      properties: [
-        IndexPropertySchema(
-          name: r'startAt',
           type: IndexType.value,
           caseSensitive: false,
         )
@@ -98,8 +67,6 @@ int _sessionEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
-  bytesCount += 3 + object.activityId.length * 3;
-  bytesCount += 3 + object.id.length * 3;
   return bytesCount;
 }
 
@@ -109,10 +76,9 @@ void _sessionSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.activityId);
-  writer.writeDateTime(offsets[1], object.endAt);
-  writer.writeString(offsets[2], object.id);
-  writer.writeDateTime(offsets[3], object.startAt);
+  writer.writeLong(offsets[0], object.activityId);
+  writer.writeDateTime(offsets[1], object.endedAt);
+  writer.writeDateTime(offsets[2], object.startedAt);
 }
 
 Session _sessionDeserialize(
@@ -122,12 +88,11 @@ Session _sessionDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = Session(
-    activityId: reader.readString(offsets[0]),
-    endAt: reader.readDateTimeOrNull(offsets[1]),
-    id: reader.readString(offsets[2]),
-    startAt: reader.readDateTime(offsets[3]),
+    activityId: reader.readLong(offsets[0]),
+    endedAt: reader.readDateTimeOrNull(offsets[1]),
+    startedAt: reader.readDateTime(offsets[2]),
   );
-  object.isarId = id;
+  object.id = id;
   return object;
 }
 
@@ -139,12 +104,10 @@ P _sessionDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readString(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 1:
       return (reader.readDateTimeOrNull(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
-    case 3:
       return (reader.readDateTime(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -152,7 +115,7 @@ P _sessionDeserializeProp<P>(
 }
 
 Id _sessionGetId(Session object) {
-  return object.isarId;
+  return object.id;
 }
 
 List<IsarLinkBase<dynamic>> _sessionGetLinks(Session object) {
@@ -160,191 +123,93 @@ List<IsarLinkBase<dynamic>> _sessionGetLinks(Session object) {
 }
 
 void _sessionAttach(IsarCollection<dynamic> col, Id id, Session object) {
-  object.isarId = id;
-}
-
-extension SessionByIndex on IsarCollection<Session> {
-  Future<Session?> getById(String id) {
-    return getByIndex(r'id', [id]);
-  }
-
-  Session? getByIdSync(String id) {
-    return getByIndexSync(r'id', [id]);
-  }
-
-  Future<bool> deleteById(String id) {
-    return deleteByIndex(r'id', [id]);
-  }
-
-  bool deleteByIdSync(String id) {
-    return deleteByIndexSync(r'id', [id]);
-  }
-
-  Future<List<Session?>> getAllById(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return getAllByIndex(r'id', values);
-  }
-
-  List<Session?> getAllByIdSync(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return getAllByIndexSync(r'id', values);
-  }
-
-  Future<int> deleteAllById(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return deleteAllByIndex(r'id', values);
-  }
-
-  int deleteAllByIdSync(List<String> idValues) {
-    final values = idValues.map((e) => [e]).toList();
-    return deleteAllByIndexSync(r'id', values);
-  }
-
-  Future<Id> putById(Session object) {
-    return putByIndex(r'id', object);
-  }
-
-  Id putByIdSync(Session object, {bool saveLinks = true}) {
-    return putByIndexSync(r'id', object, saveLinks: saveLinks);
-  }
-
-  Future<List<Id>> putAllById(List<Session> objects) {
-    return putAllByIndex(r'id', objects);
-  }
-
-  List<Id> putAllByIdSync(List<Session> objects, {bool saveLinks = true}) {
-    return putAllByIndexSync(r'id', objects, saveLinks: saveLinks);
-  }
+  object.id = id;
 }
 
 extension SessionQueryWhereSort on QueryBuilder<Session, Session, QWhere> {
-  QueryBuilder<Session, Session, QAfterWhere> anyIsarId() {
+  QueryBuilder<Session, Session, QAfterWhere> anyId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhere> anyStartAt() {
+  QueryBuilder<Session, Session, QAfterWhere> anyActivityId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
-        const IndexWhereClause.any(indexName: r'startAt'),
+        const IndexWhereClause.any(indexName: r'activityId'),
       );
     });
   }
 }
 
 extension SessionQueryWhere on QueryBuilder<Session, Session, QWhereClause> {
-  QueryBuilder<Session, Session, QAfterWhereClause> isarIdEqualTo(Id isarId) {
+  QueryBuilder<Session, Session, QAfterWhereClause> idEqualTo(Id id) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IdWhereClause.between(
-        lower: isarId,
-        upper: isarId,
+        lower: id,
+        upper: id,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> isarIdNotEqualTo(
-      Id isarId) {
+  QueryBuilder<Session, Session, QAfterWhereClause> idNotEqualTo(Id id) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
             .addWhereClause(
-              IdWhereClause.lessThan(upper: isarId, includeUpper: false),
+              IdWhereClause.lessThan(upper: id, includeUpper: false),
             )
             .addWhereClause(
-              IdWhereClause.greaterThan(lower: isarId, includeLower: false),
+              IdWhereClause.greaterThan(lower: id, includeLower: false),
             );
       } else {
         return query
             .addWhereClause(
-              IdWhereClause.greaterThan(lower: isarId, includeLower: false),
+              IdWhereClause.greaterThan(lower: id, includeLower: false),
             )
             .addWhereClause(
-              IdWhereClause.lessThan(upper: isarId, includeUpper: false),
+              IdWhereClause.lessThan(upper: id, includeUpper: false),
             );
       }
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> isarIdGreaterThan(Id isarId,
+  QueryBuilder<Session, Session, QAfterWhereClause> idGreaterThan(Id id,
       {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
-        IdWhereClause.greaterThan(lower: isarId, includeLower: include),
+        IdWhereClause.greaterThan(lower: id, includeLower: include),
       );
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> isarIdLessThan(Id isarId,
+  QueryBuilder<Session, Session, QAfterWhereClause> idLessThan(Id id,
       {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
-        IdWhereClause.lessThan(upper: isarId, includeUpper: include),
+        IdWhereClause.lessThan(upper: id, includeUpper: include),
       );
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> isarIdBetween(
-    Id lowerIsarId,
-    Id upperIsarId, {
+  QueryBuilder<Session, Session, QAfterWhereClause> idBetween(
+    Id lowerId,
+    Id upperId, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IdWhereClause.between(
-        lower: lowerIsarId,
+        lower: lowerId,
         includeLower: includeLower,
-        upper: upperIsarId,
+        upper: upperId,
         includeUpper: includeUpper,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> idEqualTo(String id) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'id',
-        value: [id],
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterWhereClause> idNotEqualTo(String id) {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'id',
-              lower: [],
-              upper: [id],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'id',
-              lower: [id],
-              includeLower: false,
-              upper: [],
-            ));
-      } else {
-        return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'id',
-              lower: [id],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'id',
-              lower: [],
-              upper: [id],
-              includeUpper: false,
-            ));
-      }
-    });
-  }
-
   QueryBuilder<Session, Session, QAfterWhereClause> activityIdEqualTo(
-      String activityId) {
+      int activityId) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IndexWhereClause.equalTo(
         indexName: r'activityId',
@@ -354,7 +219,7 @@ extension SessionQueryWhere on QueryBuilder<Session, Session, QWhereClause> {
   }
 
   QueryBuilder<Session, Session, QAfterWhereClause> activityIdNotEqualTo(
-      String activityId) {
+      int activityId) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
@@ -388,91 +253,46 @@ extension SessionQueryWhere on QueryBuilder<Session, Session, QWhereClause> {
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> startAtEqualTo(
-      DateTime startAt) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(IndexWhereClause.equalTo(
-        indexName: r'startAt',
-        value: [startAt],
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterWhereClause> startAtNotEqualTo(
-      DateTime startAt) {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'startAt',
-              lower: [],
-              upper: [startAt],
-              includeUpper: false,
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'startAt',
-              lower: [startAt],
-              includeLower: false,
-              upper: [],
-            ));
-      } else {
-        return query
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'startAt',
-              lower: [startAt],
-              includeLower: false,
-              upper: [],
-            ))
-            .addWhereClause(IndexWhereClause.between(
-              indexName: r'startAt',
-              lower: [],
-              upper: [startAt],
-              includeUpper: false,
-            ));
-      }
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterWhereClause> startAtGreaterThan(
-    DateTime startAt, {
+  QueryBuilder<Session, Session, QAfterWhereClause> activityIdGreaterThan(
+    int activityId, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'startAt',
-        lower: [startAt],
+        indexName: r'activityId',
+        lower: [activityId],
         includeLower: include,
         upper: [],
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> startAtLessThan(
-    DateTime startAt, {
+  QueryBuilder<Session, Session, QAfterWhereClause> activityIdLessThan(
+    int activityId, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'startAt',
+        indexName: r'activityId',
         lower: [],
-        upper: [startAt],
+        upper: [activityId],
         includeUpper: include,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterWhereClause> startAtBetween(
-    DateTime lowerStartAt,
-    DateTime upperStartAt, {
+  QueryBuilder<Session, Session, QAfterWhereClause> activityIdBetween(
+    int lowerActivityId,
+    int upperActivityId, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IndexWhereClause.between(
-        indexName: r'startAt',
-        lower: [lowerStartAt],
+        indexName: r'activityId',
+        lower: [lowerActivityId],
         includeLower: includeLower,
-        upper: [upperStartAt],
+        upper: [upperActivityId],
         includeUpper: includeUpper,
       ));
     });
@@ -482,54 +302,46 @@ extension SessionQueryWhere on QueryBuilder<Session, Session, QWhereClause> {
 extension SessionQueryFilter
     on QueryBuilder<Session, Session, QFilterCondition> {
   QueryBuilder<Session, Session, QAfterFilterCondition> activityIdEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
+      int value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'activityId',
         value: value,
-        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<Session, Session, QAfterFilterCondition> activityIdGreaterThan(
-    String value, {
+    int value, {
     bool include = false,
-    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         include: include,
         property: r'activityId',
         value: value,
-        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<Session, Session, QAfterFilterCondition> activityIdLessThan(
-    String value, {
+    int value, {
     bool include = false,
-    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.lessThan(
         include: include,
         property: r'activityId',
         value: value,
-        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<Session, Session, QAfterFilterCondition> activityIdBetween(
-    String lower,
-    String upper, {
+    int lower,
+    int upper, {
     bool includeLower = true,
     bool includeUpper = true,
-    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
@@ -538,132 +350,63 @@ extension SessionQueryFilter
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> activityIdStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'activityId',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> activityIdEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'activityId',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> activityIdContains(
-      String value,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'activityId',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> activityIdMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'activityId',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> activityIdIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'activityId',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> activityIdIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'activityId',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> endAtIsNull() {
+  QueryBuilder<Session, Session, QAfterFilterCondition> endedAtIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
-        property: r'endAt',
+        property: r'endedAt',
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> endAtIsNotNull() {
+  QueryBuilder<Session, Session, QAfterFilterCondition> endedAtIsNotNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNotNull(
-        property: r'endAt',
+        property: r'endedAt',
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> endAtEqualTo(
+  QueryBuilder<Session, Session, QAfterFilterCondition> endedAtEqualTo(
       DateTime? value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'endAt',
+        property: r'endedAt',
         value: value,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> endAtGreaterThan(
+  QueryBuilder<Session, Session, QAfterFilterCondition> endedAtGreaterThan(
     DateTime? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         include: include,
-        property: r'endAt',
+        property: r'endedAt',
         value: value,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> endAtLessThan(
+  QueryBuilder<Session, Session, QAfterFilterCondition> endedAtLessThan(
     DateTime? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.lessThan(
         include: include,
-        property: r'endAt',
+        property: r'endedAt',
         value: value,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> endAtBetween(
+  QueryBuilder<Session, Session, QAfterFilterCondition> endedAtBetween(
     DateTime? lower,
     DateTime? upper, {
     bool includeLower = true,
@@ -671,7 +414,7 @@ extension SessionQueryFilter
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
-        property: r'endAt',
+        property: r'endedAt',
         lower: lower,
         includeLower: includeLower,
         upper: upper,
@@ -680,172 +423,42 @@ extension SessionQueryFilter
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> idEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
+  QueryBuilder<Session, Session, QAfterFilterCondition> idEqualTo(Id value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'id',
         value: value,
-        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<Session, Session, QAfterFilterCondition> idGreaterThan(
-    String value, {
+    Id value, {
     bool include = false,
-    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         include: include,
         property: r'id',
         value: value,
-        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<Session, Session, QAfterFilterCondition> idLessThan(
-    String value, {
+    Id value, {
     bool include = false,
-    bool caseSensitive = true,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.lessThan(
         include: include,
         property: r'id',
         value: value,
-        caseSensitive: caseSensitive,
       ));
     });
   }
 
   QueryBuilder<Session, Session, QAfterFilterCondition> idBetween(
-    String lower,
-    String upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.between(
-        property: r'id',
-        lower: lower,
-        includeLower: includeLower,
-        upper: upper,
-        includeUpper: includeUpper,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> idStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.startsWith(
-        property: r'id',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> idEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.endsWith(
-        property: r'id',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> idContains(String value,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.contains(
-        property: r'id',
-        value: value,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> idMatches(
-      String pattern,
-      {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.matches(
-        property: r'id',
-        wildcard: pattern,
-        caseSensitive: caseSensitive,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> idIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'id',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> idIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        property: r'id',
-        value: '',
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> isarIdEqualTo(
-      Id value) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'isarId',
-        value: value,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> isarIdGreaterThan(
-    Id value, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.greaterThan(
-        include: include,
-        property: r'isarId',
-        value: value,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> isarIdLessThan(
-    Id value, {
-    bool include = false,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(FilterCondition.lessThan(
-        include: include,
-        property: r'isarId',
-        value: value,
-      ));
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterFilterCondition> isarIdBetween(
     Id lower,
     Id upper, {
     bool includeLower = true,
@@ -853,7 +466,7 @@ extension SessionQueryFilter
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
-        property: r'isarId',
+        property: r'id',
         lower: lower,
         includeLower: includeLower,
         upper: upper,
@@ -862,43 +475,43 @@ extension SessionQueryFilter
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> startAtEqualTo(
+  QueryBuilder<Session, Session, QAfterFilterCondition> startedAtEqualTo(
       DateTime value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
-        property: r'startAt',
+        property: r'startedAt',
         value: value,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> startAtGreaterThan(
+  QueryBuilder<Session, Session, QAfterFilterCondition> startedAtGreaterThan(
     DateTime value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.greaterThan(
         include: include,
-        property: r'startAt',
+        property: r'startedAt',
         value: value,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> startAtLessThan(
+  QueryBuilder<Session, Session, QAfterFilterCondition> startedAtLessThan(
     DateTime value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.lessThan(
         include: include,
-        property: r'startAt',
+        property: r'startedAt',
         value: value,
       ));
     });
   }
 
-  QueryBuilder<Session, Session, QAfterFilterCondition> startAtBetween(
+  QueryBuilder<Session, Session, QAfterFilterCondition> startedAtBetween(
     DateTime lower,
     DateTime upper, {
     bool includeLower = true,
@@ -906,7 +519,7 @@ extension SessionQueryFilter
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
-        property: r'startAt',
+        property: r'startedAt',
         lower: lower,
         includeLower: includeLower,
         upper: upper,
@@ -935,39 +548,27 @@ extension SessionQuerySortBy on QueryBuilder<Session, Session, QSortBy> {
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> sortByEndAt() {
+  QueryBuilder<Session, Session, QAfterSortBy> sortByEndedAt() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'endAt', Sort.asc);
+      return query.addSortBy(r'endedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> sortByEndAtDesc() {
+  QueryBuilder<Session, Session, QAfterSortBy> sortByEndedAtDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'endAt', Sort.desc);
+      return query.addSortBy(r'endedAt', Sort.desc);
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> sortById() {
+  QueryBuilder<Session, Session, QAfterSortBy> sortByStartedAt() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'id', Sort.asc);
+      return query.addSortBy(r'startedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> sortByIdDesc() {
+  QueryBuilder<Session, Session, QAfterSortBy> sortByStartedAtDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'id', Sort.desc);
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterSortBy> sortByStartAt() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'startAt', Sort.asc);
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterSortBy> sortByStartAtDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'startAt', Sort.desc);
+      return query.addSortBy(r'startedAt', Sort.desc);
     });
   }
 }
@@ -986,15 +587,15 @@ extension SessionQuerySortThenBy
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> thenByEndAt() {
+  QueryBuilder<Session, Session, QAfterSortBy> thenByEndedAt() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'endAt', Sort.asc);
+      return query.addSortBy(r'endedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> thenByEndAtDesc() {
+  QueryBuilder<Session, Session, QAfterSortBy> thenByEndedAtDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'endAt', Sort.desc);
+      return query.addSortBy(r'endedAt', Sort.desc);
     });
   }
 
@@ -1010,89 +611,63 @@ extension SessionQuerySortThenBy
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> thenByIsarId() {
+  QueryBuilder<Session, Session, QAfterSortBy> thenByStartedAt() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'isarId', Sort.asc);
+      return query.addSortBy(r'startedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Session, Session, QAfterSortBy> thenByIsarIdDesc() {
+  QueryBuilder<Session, Session, QAfterSortBy> thenByStartedAtDesc() {
     return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'isarId', Sort.desc);
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterSortBy> thenByStartAt() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'startAt', Sort.asc);
-    });
-  }
-
-  QueryBuilder<Session, Session, QAfterSortBy> thenByStartAtDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'startAt', Sort.desc);
+      return query.addSortBy(r'startedAt', Sort.desc);
     });
   }
 }
 
 extension SessionQueryWhereDistinct
     on QueryBuilder<Session, Session, QDistinct> {
-  QueryBuilder<Session, Session, QDistinct> distinctByActivityId(
-      {bool caseSensitive = true}) {
+  QueryBuilder<Session, Session, QDistinct> distinctByActivityId() {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'activityId', caseSensitive: caseSensitive);
+      return query.addDistinctBy(r'activityId');
     });
   }
 
-  QueryBuilder<Session, Session, QDistinct> distinctByEndAt() {
+  QueryBuilder<Session, Session, QDistinct> distinctByEndedAt() {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'endAt');
+      return query.addDistinctBy(r'endedAt');
     });
   }
 
-  QueryBuilder<Session, Session, QDistinct> distinctById(
-      {bool caseSensitive = true}) {
+  QueryBuilder<Session, Session, QDistinct> distinctByStartedAt() {
     return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'id', caseSensitive: caseSensitive);
-    });
-  }
-
-  QueryBuilder<Session, Session, QDistinct> distinctByStartAt() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'startAt');
+      return query.addDistinctBy(r'startedAt');
     });
   }
 }
 
 extension SessionQueryProperty
     on QueryBuilder<Session, Session, QQueryProperty> {
-  QueryBuilder<Session, int, QQueryOperations> isarIdProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'isarId');
-    });
-  }
-
-  QueryBuilder<Session, String, QQueryOperations> activityIdProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'activityId');
-    });
-  }
-
-  QueryBuilder<Session, DateTime?, QQueryOperations> endAtProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'endAt');
-    });
-  }
-
-  QueryBuilder<Session, String, QQueryOperations> idProperty() {
+  QueryBuilder<Session, int, QQueryOperations> idProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'id');
     });
   }
 
-  QueryBuilder<Session, DateTime, QQueryOperations> startAtProperty() {
+  QueryBuilder<Session, int, QQueryOperations> activityIdProperty() {
     return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'startAt');
+      return query.addPropertyName(r'activityId');
+    });
+  }
+
+  QueryBuilder<Session, DateTime?, QQueryOperations> endedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'endedAt');
+    });
+  }
+
+  QueryBuilder<Session, DateTime, QQueryOperations> startedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'startedAt');
     });
   }
 }

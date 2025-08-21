@@ -1,12 +1,15 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'services/stats_service.dart';
-import 'providers.dart';
+import 'models/stats.dart';
+import 'providers_stats.dart';
 
-final heatmapYearProvider =
-FutureProvider.family<Map<DateTime, int>, String>((ref, activityId) async {
-  final db = ref.read(dbProvider);
-  final stats = StatsService(db);
-  final now = DateTime.now();
-  final from = DateTime(now.year, 1, 1);
-  return stats.dailyMinutesRange(activityId: activityId, from: from, to: now);
+/// Alias pratique si ton UI importe ce fichier
+final miniHeatmapProvider = last28DaysProvider;
+
+/// Valeur max (utile pour normaliser les teintes)
+final heatmapMaxProvider = Provider.family<int, List<DayStat>>((ref, days) {
+  var max = 0;
+  for (final d in days) {
+    if (d.minutes > max) max = d.minutes;
+  }
+  return max == 0 ? 1 : max;
 });

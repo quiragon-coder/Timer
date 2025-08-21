@@ -1,11 +1,21 @@
+import '../models/activity.dart';
 import '../models/session.dart';
 import '../models/pause.dart';
 import 'database_service.dart';
 
-extension DatabaseModelsAdapters on DatabaseService {
-  List<Session> listSessionsByActivityCompat(String activityId) =>
-      listSessionsByActivity(activityId);
+class DbAdapters {
+  final DatabaseService db;
+  DbAdapters(this.db);
 
-  List<Pause> listPausesBySessionCompat(String sessionId) =>
-      listPausesBySession(sessionId);
+  Future<List<Session>> listSessionsByActivityModel(Activity a) {
+    return db.listSessionsByActivityUid(a.uid);
+  }
+
+  Future<List<Pause>> listPausesBySessionModel(Session s) {
+    return db.listPausesBySession(s.id);
+  }
+
+  Future<Duration> effectiveDurationFor(Session s) {
+    return db.effectiveDurationFor(s);
+  }
 }
