@@ -10,9 +10,10 @@ import '../widgets/mini_heatmap.dart';
 import '../widgets/activity_stats_panel.dart';
 import '../widgets/history_today_card.dart';
 import '../widgets/elapsed_badge.dart';
+import '../widgets/heatmap.dart' as hw;
 
 import 'activity_history_page.dart';
-import 'heatmap_page.dart' as hp; // alias de la page détaillée "Heatmap" (attend data + baseColor)
+import 'heatmap_page.dart' as hp;
 
 class ActivityDetailPage extends ConsumerWidget {
   final String activityId;
@@ -53,7 +54,6 @@ class ActivityDetailPage extends ConsumerWidget {
             tooltip: 'Heatmap détaillée',
             icon: const Icon(Icons.grid_view_rounded),
             onPressed: () {
-              // Construit la map des 90 derniers jours et ouvre la page Heatmap (hp.Heatmap)
               final today = DateUtils.dateOnly(DateTime.now());
               final start = today.subtract(const Duration(days: 90 - 1));
               final map = <DateTime, int>{};
@@ -80,11 +80,9 @@ class ActivityDetailPage extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _HeaderInfo(activity: activity),
-
               const SizedBox(height: 12),
 
-              _ControlsCard(activityId: activityId, isRunning: isRunning, isPaused: isPaused),
-
+              _ControlsBar(activityId: activityId, isRunning: isRunning, isPaused: isPaused),
               const SizedBox(height: 12),
 
               HistoryTodayCard(
@@ -111,21 +109,25 @@ class ActivityDetailPage extends ConsumerWidget {
 
               const SizedBox(height: 12),
 
+              // ── MINI-HEATMAP : carte pleine largeur
               Card(
                 elevation: 0,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Aperçu (28 jours)', style: Theme.of(context).textTheme.titleSmall),
-                      const SizedBox(height: 8),
-                      MiniHeatmap(
-                        activityId: activityId,
-                        days: 28,
-                        baseColor: activity?.color ?? Theme.of(context).colorScheme.primary,
-                      ),
-                    ],
+                  child: SizedBox( // ← force la largeur à 100% à l’intérieur de la Card
+                    width: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Mini heatmap', style: Theme.of(context).textTheme.titleSmall),
+                        const SizedBox(height: 8),
+                        MiniHeatmap(
+                          activityId: activityId,
+                          days: 28,
+                          baseColor: activity?.color ?? Theme.of(context).colorScheme.primary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -138,6 +140,14 @@ class ActivityDetailPage extends ConsumerWidget {
                   padding: const EdgeInsets.all(12),
                   child: ActivityStatsPanel(activityId: activityId),
                 ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── APERÇU (28 JOURS) EN BAS : carte pleine largeur
+              _BottomPreview28Days(
+                activityId: activityId,
+                baseColor: activity?.color ?? Theme.of(context).colorScheme.primary,
               ),
             ],
           ),
@@ -212,17 +222,18 @@ class _GoalChip extends StatelessWidget {
   }
 }
 
-class _ControlsCard extends ConsumerStatefulWidget {
+/// Barre de contrôle (compact auto) — inchangée si tu as déjà collé la version précédente
+class _ControlsBar extends ConsumerStatefulWidget {
   final String activityId;
   final bool isRunning;
   final bool isPaused;
-  const _ControlsCard({required this.activityId, required this.isRunning, required this.isPaused});
+  const _ControlsBar({required this.activityId, required this.isRunning, required this.isPaused});
 
   @override
-  ConsumerState<_ControlsCard> createState() => _ControlsCardState();
+  ConsumerState<_ControlsBar> createState() => _ControlsBarState();
 }
 
-class _ControlsCardState extends ConsumerState<_ControlsCard> {
+class _ControlsBarState extends ConsumerState<_ControlsBar> {
   bool _loading = false;
 
   @override
@@ -233,66 +244,120 @@ class _ControlsCardState extends ConsumerState<_ControlsCard> {
       elevation: 0,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElapsedBadge(
-                isRunning: widget.isRunning,
-                isPaused: widget.isPaused,
-                getElapsed: () => db.runningElapsed(widget.activityId),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 430;
+
+            Widget startBtn = ElevatedButton.icon(
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: compact ? const SizedBox.shrink() : const Text('Démarrer'),
+              onPressed: _loading || widget.isRunning ? null : () async {
+                setState(() => _loading = true);
+                try { await db.start(widget.activityId); }
+                finally { if (mounted) setState(() => _loading = false); }
+              },
+            );
+
+            Widget pauseBtn = OutlinedButton.icon(
+              icon: Icon(widget.isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
+              label: compact ? const SizedBox.shrink() : Text(widget.isPaused ? 'Reprendre' : 'Pause'),
+              onPressed: _loading || !widget.isRunning ? null : () async {
+                setState(() => _loading = true);
+                try { await db.togglePause(widget.activityId); }
+                finally { if (mounted) setState(() => _loading = false); }
+              },
+            );
+
+            Widget stopBtn = FilledButton.icon(
+              icon: const Icon(Icons.stop_rounded),
+              label: compact ? const SizedBox.shrink() : const Text('Stop'),
+              onPressed: _loading || !widget.isRunning ? null : () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Arrêter la session ?'),
+                    content: const Text('La durée sera enregistrée.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Annuler')),
+                      FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Stop')),
+                    ],
+                  ),
+                );
+                if (confirm != true) return;
+                setState(() => _loading = true);
+                try { await db.stop(widget.activityId); }
+                finally { if (mounted) setState(() => _loading = false); }
+              },
+            );
+
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ElapsedBadge(
+                    isRunning: widget.isRunning,
+                    isPaused: widget.isPaused,
+                    getElapsed: () => db.runningElapsed(widget.activityId),
+                  ),
+                  const SizedBox(width: 12),
+                  startBtn,
+                  const SizedBox(width: 8),
+                  pauseBtn,
+                  const SizedBox(width: 8),
+                  stopBtn,
+                ],
               ),
-            ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
 
-            const SizedBox(height: 12),
+/// Bloc d'aperçu (28 jours) en bas — maintenant pleine largeur
+class _BottomPreview28Days extends ConsumerWidget {
+  final String activityId;
+  final Color baseColor;
+  const _BottomPreview28Days({required this.activityId, required this.baseColor});
 
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: [
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('Démarrer'),
-                  onPressed: _loading || widget.isRunning ? null : () async {
-                    setState(() => _loading = true);
-                    try { await db.start(widget.activityId); }
-                    finally { if (mounted) setState(() => _loading = false); }
-                  },
-                ),
-                OutlinedButton.icon(
-                  icon: Icon(widget.isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded),
-                  label: Text(widget.isPaused ? 'Reprendre' : 'Pause'),
-                  onPressed: _loading || !widget.isRunning ? null : () async {
-                    setState(() => _loading = true);
-                    try { await db.togglePause(widget.activityId); }
-                    finally { if (mounted) setState(() => _loading = false); }
-                  },
-                ),
-                FilledButton.icon(
-                  icon: const Icon(Icons.stop_rounded),
-                  label: const Text('Stop'),
-                  onPressed: _loading || !widget.isRunning ? null : () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Arrêter la session ?'),
-                        content: const Text('La durée sera enregistrée.'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Annuler')),
-                          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Stop')),
-                        ],
-                      ),
-                    );
-                    if (confirm != true) return;
-                    setState(() => _loading = true);
-                    try { await db.stop(widget.activityId); }
-                    finally { if (mounted) setState(() => _loading = false); }
-                  },
-                ),
-              ],
-            ),
-          ],
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final db = ref.watch(dbProvider);
+
+    Map<DateTime, int> _load() {
+      final today = DateUtils.dateOnly(DateTime.now());
+      final start = today.subtract(const Duration(days: 28 - 1));
+      final map = <DateTime, int>{};
+      for (int i = 0; i < 28; i++) {
+        final day = DateUtils.dateOnly(start.add(Duration(days: i)));
+        map[day] = db.effectiveMinutesOnDay(activityId, day);
+      }
+      return map;
+    }
+
+    final map = _load();
+
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: double.infinity, // ← force la largeur
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Aperçu (28 jours)', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              hw.Heatmap(
+                data: map,
+                baseColor: baseColor,
+                tileSize: 12,
+                gutter: 2,
+                showWeekdayLabels: true,
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,11 +1,10 @@
-﻿// lib/widgets/activity_stats_panel.dart
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../utils/color_compat.dart';
 import '../providers_stats.dart';
 import 'hourly_bars_chart.dart';
-import 'weekly_bars_chart.dart';
+import 'weekly_bars_card.dart';
 
 class ActivityStatsPanel extends ConsumerWidget {
   final String activityId;
@@ -18,7 +17,6 @@ class ActivityStatsPanel extends ConsumerWidget {
     final monthAsync  = ref.watch(minutesThisMonthProvider(activityId));
     final yearAsync   = ref.watch(minutesThisYearProvider(activityId));
     final hourlyAsync = ref.watch(hourlyTodayProvider(activityId));
-    final last7Async  = ref.watch(lastNDaysProvider(LastNDaysArgs(activityId: activityId, n: 7)));
 
     Widget chip(String label, AsyncValue<int> val) {
       return val.when(
@@ -63,14 +61,8 @@ class ActivityStatsPanel extends ConsumerWidget {
 
         const SizedBox(height: 16),
 
-        // 7 derniers jours
-        Text("7 derniers jours", style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 8),
-        last7Async.when(
-          loading: () => const SizedBox(height: 140, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-          error: (e, _) => SizedBox(height: 60, child: Center(child: Text('Erreur: $e'))),
-          data: (days) => SizedBox(height: 160, child: WeeklyBarsChart(stats: days)),
-        ),
+        // 7 derniers jours (synchrone)
+        WeeklyBarsCard(activityId: activityId),
       ],
     );
   }
