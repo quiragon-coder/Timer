@@ -1,15 +1,13 @@
+// lib/pages/activities_list_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
-import '../providers.dart'; // activitiesProvider, dbProvider
-import '../providers_settings.dart';
+import '../providers.dart'; // dbProvider, activitiesProvider
 import '../widgets/activity_controls.dart';
-import '../widgets/mini_heatmap.dart';
-import 'activity_detail_page.dart';
 import 'create_activity_page.dart';
-import 'settings_page.dart';
+import 'activity_detail_page.dart';
 
 class ActivitiesListPage extends ConsumerWidget {
   const ActivitiesListPage({super.key});
@@ -17,77 +15,18 @@ class ActivitiesListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activitiesAsync = ref.watch(activitiesProvider);
-    final settings = ref.watch(settingsProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Activities'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Réglages',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsPage()),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Activities')),
       body: activitiesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erreur: $e')),
-        data: (list0) {
-          if (list0.isEmpty) {
+        data: (list) {
+          if (list.isEmpty) {
             return const Center(
               child: Text('Aucune activit\u00E9. Ajoute-en une \u2192'),
             );
           }
-
-          // Tri selon réglage
-          final db = ref.watch(dbProvider);
-          final list = [...list0];
-          switch (settings.activitiesSort) {
-            case ActivitiesSort.name:
-              list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-              break;
-            case ActivitiesSort.runningFirst:
-              list.sort((a, b) {
-                final ar = db.isRunning(a.id) ? 1 : 0;
-                final br = db.isRunning(b.id) ? 1 : 0;
-                if (ar != br) return br - ar; // running d'abord
-                return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-              });
-              break;
-          }
-
-          // Cas 1 activité -> mini-heatmap selon le réglage
-          if (list.length == 1 && settings.showMiniHeatmapHome) {
-            final a = list.first;
-            return ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                _ActivityTile(a: a),
-                const SizedBox(height: 12),
-                Card(
-                  elevation: 0,
-                  clipBehavior: Clip.antiAlias,
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('7 derniers jours',
-                            style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 8),
-                        MiniHeatmap(activityId: a.id, days: 21),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }
-
           return ListView.separated(
             padding: const EdgeInsets.all(12),
             itemCount: list.length,
@@ -97,9 +36,11 @@ class ActivitiesListPage extends ConsumerWidget {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const CreateActivityPage()),
-        ),
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const CreateActivityPage()),
+          );
+        },
         icon: const Icon(Icons.add),
         label: const Text('Ajouter'),
       ),
@@ -108,8 +49,8 @@ class ActivitiesListPage extends ConsumerWidget {
 }
 
 class _ActivityTile extends ConsumerStatefulWidget {
-  const _ActivityTile({required this.a});
   final Activity a;
+  const _ActivityTile({required this.a});
 
   @override
   ConsumerState<_ActivityTile> createState() => _ActivityTileState();
@@ -124,11 +65,11 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
     super.dispose();
   }
 
-  void _syncTicker(bool running) {
+  void _ensureTicker(bool running) {
     final active = _ticker?.isActive ?? false;
     if (running && !active) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
+        if (mounted) setState(() {}); // tick visuel du badge
       });
     } else if (!running && active) {
       _ticker?.cancel();
@@ -138,69 +79,64 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(settingsProvider);
     final db = ref.watch(dbProvider);
 
-    final running = db.isRunning(widget.a.id);
-    final paused = db.isPaused(widget.a.id);
-    _syncTicker(running);
+    final id      = widget.a.id;
+    final running = db.isRunning(id);
+    final paused  = db.isPaused(id);
 
-    final elapsed = db.runningElapsed(widget.a.id);
+    // Lance/arrête le ticker selon l’état courant
+    _ensureTicker(running);
+
+    Duration elapsed;
+    try {
+      elapsed = db.runningElapsed(id);
+    } catch (_) {
+      elapsed = Duration.zero;
+    }
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
-    final compact = settings.compactListTiles;
-
     return ListTile(
-      dense: compact,
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: compact ? 4 : 8,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       leading: Text(widget.a.emoji, style: const TextStyle(fontSize: 24)),
-      title: Text(
-        widget.a.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Text(widget.a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ligne info + badge timer
+          // Ligne d’info + badge ⏱
           Row(
             children: [
+              // pastille couleur
               Container(
                 width: 10,
                 height: 10,
-                decoration: BoxDecoration(
-                  color: widget.a.color,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: widget.a.color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
+              // objectif jour (si défini)
               Expanded(
                 child: Text(
-                  'Objectif: ${widget.a.dailyGoalMinutes ?? 0} min/j',
+                  (widget.a.dailyGoalMinutes ?? 0) > 0
+                      ? "Objectif: ${widget.a.dailyGoalMinutes} min/j"
+                      : "Aucun objectif journalier",
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
+              // Badge temps en cours (uniquement si running)
               if (running)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: (paused ? Colors.orange : Colors.green).withOpacity(.15),
+                    color: (paused ? Colors.orange : Colors.green).withOpacity(.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
                     const SizedBox(width: 4),
-                    Text(
-                      settings.showSecondsInBadges
-                          ? '$mm:$ss'
-                          : '${elapsed.inMinutes} min',
-                    ),
+                    Text("$mm:$ss"),
                   ]),
                 ),
             ],
@@ -208,19 +144,22 @@ class _ActivityTileState extends ConsumerState<_ActivityTile> {
 
           const SizedBox(height: 8),
 
+          // Contrôles compacts
           OverflowBar(
             alignment: MainAxisAlignment.start,
             spacing: 8,
             overflowSpacing: 8,
             children: [
-              ActivityControls(activityId: widget.a.id, compact: true),
+              ActivityControls(activityId: id, compact: true),
             ],
           ),
         ],
       ),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: widget.a)),
-      ),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: widget.a)),
+        );
+      },
     );
   }
 }

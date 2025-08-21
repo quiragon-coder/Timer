@@ -7,7 +7,7 @@ import '../widgets/heatmap.dart';
 
 class ActivityHeatmapPage extends ConsumerWidget {
   final String activityId;
-  final int n; // nombre de jours à afficher (par ex. 365)
+  final int n; // ex. 365
 
   const ActivityHeatmapPage({
     super.key,
@@ -29,15 +29,15 @@ class ActivityHeatmapPage extends ConsumerWidget {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('Erreur: $e')),
           data: (List<DailyStat> stats) {
-            // On laisse le widget réutilisable Heatmap consommer les DailyStat
             return SingleChildScrollView(
               child: Heatmap(
-                stats: stats,
-                // Optionnel: callback quand on tape une case
-                onDayTap: (date, minutes) {
+                data: stats,                // <-- API réelle du widget
+                baseColor: Colors.green,    // <-- requis
+                onTap: (day, minutes) {     // <-- callback attendu par le widget
                   final m = minutes ?? 0;
+                  final d = day.toLocal().toString().split(' ').first;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("$date • $m min")),
+                    SnackBar(content: Text("$d • $m min")),
                   );
                 },
               ),
