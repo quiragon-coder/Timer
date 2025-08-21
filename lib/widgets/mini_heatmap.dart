@@ -5,127 +5,111 @@ import '../providers_stats.dart';
 import '../pages/heatmap_page.dart';
 import 'heatmap.dart';
 
-class MiniHeatmap extends ConsumerWidget {
+class MiniHeatmap extends ConsumerStatefulWidget {
   final String activityId;
-  final int days; // fenêtre affichée (ex: 30)
-  final Color? baseColor;
+  final int days; // ex: 30
+  final Color baseColor;
 
   const MiniHeatmap({
     super.key,
     required this.activityId,
     required this.days,
-    this.baseColor,
+    required this.baseColor,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(
-      lastNDaysProvider(
-        LastNDaysArgs(activityId: activityId, n: days),
-      ),
-    );
+  ConsumerState<MiniHeatmap> createState() => _MiniHeatmapState();
+}
 
-    return async.when(
-      loading: () => const SizedBox(
-        height: 84,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      ),
-      error: (e, _) => SizedBox(
-        height: 84,
-        child: Center(child: Text('Erreur: $e')),
-      ),
-      data: (list) {
-        final data = <DateTime, int>{
-          for (final d in list) DateUtils.dateOnly(d.date): d.minutes
-        };
+class _MiniHeatmapState extends ConsumerState<MiniHeatmap> {
+  OverlayEntry? _overlay;
 
-        // Gestion tap + double-tap
-        return _TapWrapper(
-          onSingleTap: (offset) {
-            // Affiche un tooltip simple au point tapé
-            // Trouve la journée la plus proche : approximation (le widget Heatmap gère le rendu).
-            // Ici on affiche juste une info générique pour rester léger.
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Jour sélectionné')),
-            );
-          },
-          onDoubleTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ActivityHeatmapPage(
-                  activityId: activityId,
-                  n: 365,
-                  baseColor: baseColor,
-                ),
+  void _showOverlay(BuildContext context, Offset globalPos, String message) {
+    _hideOverlay();
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(
+      builder: (_) {
+        final renderBox = context.findRenderObject() as RenderBox?;
+        final size = renderBox?.size ?? const Size(200, 100);
+        final local = globalPos;
+        final dx = local.dx.clamp(8.0, size.width - 8.0);
+        final dy = (local.dy - 40).clamp(8.0, size.height - 8.0);
+
+        return Positioned(
+          left: dx,
+          top: dy,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(.85),
+                borderRadius: BorderRadius.circular(8),
               ),
-            );
-          },
-          child: Heatmap(
-            data: data,
-            baseColor: baseColor ?? Theme.of(context).colorScheme.primary,
-            cellSize: 12,
-            cellSpacing: 3,
-            padding: const EdgeInsets.all(8),
-            // Pas d’onTap ici : on passe par notre wrapper pour gérer single/double tap
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
           ),
         );
       },
     );
+    overlay.insert(entry);
+    _overlay = entry;
+
+    Future.delayed(const Duration(seconds: 1), _hideOverlay);
   }
-}
 
-/// Détecte single tap vs double tap et expose la position du single tap.
-class _TapWrapper extends StatefulWidget {
-  final Widget child;
-  final void Function(Offset localPos) onSingleTap;
-  final VoidCallback onDoubleTap;
-
-  const _TapWrapper({
-    required this.child,
-    required this.onSingleTap,
-    required this.onDoubleTap,
-  });
+  void _hideOverlay() {
+    _overlay?.remove();
+    _overlay = null;
+  }
 
   @override
-  State<_TapWrapper> createState() => _TapWrapperState();
-}
-
-class _TapWrapperState extends State<_TapWrapper> {
-  Offset _lastTapPosition = Offset.zero;
-  final Duration _doubleTapDelay = const Duration(milliseconds: 260);
-  DateTime? _lastTapTime;
-
-  void _handleTapDown(TapDownDetails d) {
-    _lastTapPosition = d.localPosition;
-  }
-
-  void _handleTap() {
-    final now = DateTime.now();
-    if (_lastTapTime != null &&
-        now.difference(_lastTapTime!) <= _doubleTapDelay) {
-      // Double tap
-      _lastTapTime = null;
-      widget.onDoubleTap();
-    } else {
-      // Single tap
-      _lastTapTime = now;
-      Future.delayed(_doubleTapDelay, () {
-        if (!mounted) return;
-        // Si pas eu de second tap dans la fenêtre, considère comme single tap
-        if (_lastTapTime != null &&
-            DateTime.now().difference(_lastTapTime!) > _doubleTapDelay) {
-          widget.onSingleTap(_lastTapPosition);
-        }
-      });
-    }
+  void dispose() {
+    _hideOverlay();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: _handleTapDown,
-      onTap: _handleTap,
-      child: widget.child,
+    final async = ref.watch(
+      lastNDaysProvider(LastNDaysArgs(activityId: widget.activityId, n: widget.days)),
+    );
+
+    return async.when(
+      loading: () => const SizedBox(
+        height: 64,
+        child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+      ),
+      error: (e, _) => SizedBox(
+        height: 64,
+        child: Center(child: Text('Erreur: $e')),
+      ),
+      data: (stats) {
+        final map = <DateTime, int>{};
+        for (final d in stats) {
+          map[DateUtils.dateOnly(d.date)] = d.minutes;
+        }
+
+        return GestureDetector(
+          onTapDown: (d) => _showOverlay(context, d.globalPosition, "Mini heatmap — tape 2× pour ouvrir"),
+          onDoubleTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ActivityHeatmapPage(
+                activityId: widget.activityId,
+                n: 365,
+                baseColor: widget.baseColor,
+              ),
+            ));
+          },
+          child: Heatmap(
+            data: map,
+            baseColor: widget.baseColor,
+          ),
+        );
+      },
     );
   }
 }
