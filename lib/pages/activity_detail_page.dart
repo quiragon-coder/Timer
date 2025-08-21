@@ -1,17 +1,19 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
-import '../models/session.dart';                 // <-- Session
-import '../providers.dart';                      // dbProvider
-import '../services/database_service.dart';      // <-- DatabaseService
+import '../models/session.dart';
+
+import '../providers.dart';            // dbProvider
+import '../providers_stats.dart';     // minutesTodayProvider, minutesThisWeekProvider, hourlyTodayProvider, lastNDaysProvider...
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
 import '../widgets/mini_heatmap.dart';
+import '../widgets/heatmap.dart';     // widget Heatmap (détaillée)
 
 class ActivityDetailPage extends ConsumerStatefulWidget {
   final Activity activity;
-
   const ActivityDetailPage({super.key, required this.activity});
 
   @override
@@ -19,266 +21,281 @@ class ActivityDetailPage extends ConsumerStatefulWidget {
 }
 
 class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
-  String get _aId => widget.activity.id;
+  Timer? _ticker;
+  ProviderSubscription? _cancelDbListen;
+
+  @override
+  void initState() {
+    super.initState();
+    // Tick visuel pour le badge (mm:ss) quand ça tourne.
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      final db = ref.read(dbProvider);
+      if (db.isRunning(widget.activity.id) && mounted) setState(() {});
+    });
+
+    // Écoute manuelle: quand le DB bouge -> on invalide les stats et on rebuild.
+    _cancelDbListen = ref.listenManual(
+      dbProvider,
+          (prev, next) {
+        final id = widget.activity.id;
+        ref.invalidate(minutesTodayProvider(id));
+        ref.invalidate(hourlyTodayProvider(id));
+        ref.invalidate(minutesThisWeekProvider(id));
+        ref.invalidate(minutesThisMonthProvider(id));
+        ref.invalidate(minutesThisYearProvider(id));
+        ref.invalidate(lastNDaysProvider(LastNDaysArgs(activityId: id, n: 7)));
+        if (mounted) setState(() {});
+      },
+      fireImmediately: false,
+    );
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _cancelDbListen?.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final a  = widget.activity;
     final db = ref.watch(dbProvider);
 
-    final running = db.isRunning(_aId);
-    final paused = db.isPaused(_aId);
-    final elapsed = db.runningElapsed(_aId);
-    final String badge = _fmtMmSs(elapsed);
+    final running = db.isRunning(a.id);
+    final paused  = db.isPaused(a.id);
+    final elapsed = db.runningElapsed(a.id);
+    final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+
+    final todayAsync = ref.watch(minutesTodayProvider(a.id));
 
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            Text(widget.activity.emoji, style: const TextStyle(fontSize: 22)),
+            Text(a.emoji, style: const TextStyle(fontSize: 22)),
             const SizedBox(width: 8),
-            Flexible(
+            Expanded(
               child: Text(
-                widget.activity.name,
+                a.name,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (running)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (paused ? Colors.orange : Colors.green).withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: paused ? Colors.orange : Colors.green,
+                    width: 1,
+                  ),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
+                  const SizedBox(width: 6),
+                  Text("$mm:$ss"),
+                ]),
+              ),
           ],
         ),
-        actions: [
-          if (running)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Chip(
-                label: Text(badge),
-                avatar: Icon(
-                  paused ? Icons.pause : Icons.timer_outlined,
-                  size: 16,
-                  color: paused ? Colors.orange : theme.colorScheme.primary,
-                ),
-                backgroundColor: (paused ? Colors.orange : theme.colorScheme.primary).withOpacity(.10),
-                side: BorderSide(
-                  color: (paused ? Colors.orange : theme.colorScheme.primary).withOpacity(.35),
-                ),
-              ),
-            ),
-        ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+        padding: const EdgeInsets.all(12),
         children: [
-          // 1) CONTRÔLES
-          _Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Contrôles', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 10),
-                ActivityControls(activityId: _aId),
-              ],
-            ),
+          // Objectif du jour (si défini)
+          todayAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+            data: (today) {
+              final goal = a.dailyGoalMinutes ?? 0;
+              if (goal <= 0) return const SizedBox.shrink();
+              if (today >= goal) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: const [
+                    Icon(Icons.check_circle, size: 18, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text("Objectif du jour atteint"),
+                  ]),
+                );
+              }
+              final remain = goal - today;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text("Reste $remain min aujourd'hui"),
+              );
+            },
+          ),
+
+          // Contrôles (Start/Pause/Stop responsives)
+          Card(
+            child: ActivityControls(activityId: a.id),
           ),
           const SizedBox(height: 12),
 
-          // 2) HISTORIQUE
-          _Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Historique', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 10),
-                _buildCurrentHistoryLine(context, db),
-                const SizedBox(height: 6),
-                const Divider(height: 22),
-                ..._buildPastSessions(context, db),
-              ],
-            ),
-          ),
+          // Historique (sessions entre contrôles et graphs)
+          _buildHistory(context, db, a.id),
           const SizedBox(height: 12),
 
-          // 3) STATS (chips + graphes)
-          ActivityStatsPanel(activityId: _aId),
-          const SizedBox(height: 12),
-
-          // 4) MINI HEATMAP SOUS LES STATS
-          _Card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Mini heatmap', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
-                MiniHeatmap(
-                  activityId: _aId,
-                  days: 7, // <-- param correct
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Ligne "en cours" si une session tourne
-  Widget _buildCurrentHistoryLine(BuildContext context, DatabaseService db) {
-    final theme = Theme.of(context);
-    final running = db.isRunning(_aId);
-    if (!running) {
-      return Row(
-        children: [
-          Icon(Icons.history, color: theme.colorScheme.outline),
-          const SizedBox(width: 8),
-          Text(
-            'Aucune session en cours',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      );
-    }
-
-    final DateTime? start = db.currentSessionStart(_aId);
-    final now = DateTime.now();
-    final dur = now.difference(start ?? now);
-    final durStr = _fmtHms(dur);
-
-    return Row(
-      children: [
-        const Icon(Icons.play_arrow_rounded, color: Colors.green),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            '${_fmtDateTime(start)}  →  en cours',
-            style: theme.textTheme.bodyMedium,
-          ),
-        ),
-        Chip(
-          label: Text(durStr),
-          backgroundColor: Colors.green.withOpacity(.10),
-          side: const BorderSide(color: Colors.green),
-        ),
-      ],
-    );
-  }
-
-  // Sessions passées (10 dernières)
-  List<Widget> _buildPastSessions(BuildContext context, DatabaseService db) {
-    final theme = Theme.of(context);
-
-    // On filtre toute valeur nulle au cas où l’API renverrait List<Session?>
-    final List<Session> sessions =
-    db.listSessionsByActivity(_aId).whereType<Session>().toList();
-
-    // Tri: plus récentes d'abord (par endAt si disponible sinon startAt)
-    sessions.sort((a, b) {
-      final DateTime da = (a.endAt ?? a.startAt);
-      final DateTime dbt = (b.endAt ?? b.startAt);
-      return dbt.compareTo(da);
-    });
-
-    if (sessions.isEmpty) {
-      return [
-        Row(
-          children: [
-            Icon(Icons.info_outline, color: theme.colorScheme.outline),
-            const SizedBox(width: 8),
-            Text(
-              'Aucune session terminée',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        )
-      ];
-    }
-
-    return sessions.take(10).map((s) {
-      final DateTime start = s.startAt;
-      final DateTime end = s.endAt ?? s.startAt;
-      final Duration dur = end.difference(start);
-      final String textDur = _fmtHms(dur);
-
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.check_circle, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
+          // Stats + mini heatmap (7 derniers jours)
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    '${_fmtDateTime(start)}  au  ${_fmtDateTime(end)}',
-                    style: theme.textTheme.bodyMedium,
+                  // En-tête « 7 derniers jours » + mini heatmap cliquable
+                  Row(
+                    children: [
+                      const Text("7 derniers jours", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      MiniHeatmap(
+                        activityId: a.id,
+                        days: 28,
+                        baseColor: a.color,
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: "Heatmap détaillée",
+                        onPressed: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => HeatmapPage(activity: a),
+                          ));
+                        },
+                        icon: const Icon(Icons.grid_view),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Durée: $textDur',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  const SizedBox(height: 8),
+
+                  // Panneau avec Today/Week/Month/Year + courbes
+                  ActivityStatsPanel(activityId: a.id),
                 ],
               ),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Historique de sessions pour l’activité [activityId].
+  Widget _buildHistory(BuildContext context, dynamic db, String activityId) {
+    final List<Session> sessions = db.listSessionsByActivity(activityId);
+    if (sessions.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            "Aucune session pour l’instant.",
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ),
       );
-    }).toList();
-  }
-
-  // Helpers format
-  static String _two(int n) => n.toString().padLeft(2, '0');
-
-  String _fmtMmSs(Duration d) =>
-      '${_two(d.inMinutes.remainder(60))}:${_two(d.inSeconds.remainder(60))}';
-
-  String _fmtHms(Duration d) {
-    if (d.inHours >= 1) {
-      final h = d.inHours;
-      final m = d.inMinutes.remainder(60);
-      final s = d.inSeconds.remainder(60);
-      return '${h}h ${_two(m)}m ${_two(s)}s';
     }
-    final m = d.inMinutes;
-    final s = d.inSeconds.remainder(60);
-    return '${m}m ${_two(s)}s';
+
+    // Plus récent -> plus ancien
+    final ordered = sessions.toList()
+      ..sort((a, b) => (b.startAt ?? DateTime(1970)).compareTo(a.startAt ?? DateTime(1970)));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text("Historique", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...ordered.map((s) {
+              final start = s.startAt;
+              final end   = s.endAt;
+              final title = start != null
+                  ? "${start.year}-${start.month.toString().padLeft(2,'0')}-${start.day.toString().padLeft(2,'0')}  "
+                  "${start.hour.toString().padLeft(2,'0')}:${start.minute.toString().padLeft(2,'0')}"
+                  : "(début inconnu)";
+
+              final pauses = db.listPausesBySession(activityId, s.id);
+              final totalPaused = pauses.fold<Duration>(Duration.zero, (acc, p) {
+                final ps = p.startAt;
+                final pe = p.endAt ?? DateTime.now();
+                if (ps == null) return acc;
+                return acc + pe.difference(ps);
+              });
+
+              Duration effective;
+              if (start == null) {
+                effective = Duration.zero;
+              } else {
+                final stop = end ?? DateTime.now();
+                final full = stop.difference(start);
+                effective = full - totalPaused;
+                if (effective.isNegative) effective = Duration.zero;
+              }
+
+              final mins = effective.inMinutes;
+              return ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+                subtitle: pauses.isEmpty
+                    ? const Text("Aucune pause")
+                    : Text("${pauses.length} pause(s) • ${_fmtDuration(totalPaused)}"),
+                trailing: Text("$mins min", style: const TextStyle(fontWeight: FontWeight.w600)),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
-  String _fmtDateTime(DateTime? dt) {
-    if (dt == null) return '—';
-    final dd = _two(dt.day);
-    final mm = _two(dt.month);
-    final hh = _two(dt.hour);
-    final min = _two(dt.minute);
-    return '$dd/$mm ${hh}h$min';
+  String _fmtDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    if (h > 0) return "${h}h${m.toString().padLeft(2, '0')}";
+    return "${m}m";
   }
 }
 
-// Petite carte réutilisable
-class _Card extends StatelessWidget {
-  final Widget child;
-  const _Card({required this.child});
+/// Page heatmap détaillée (ex. 90 jours)
+class HeatmapPage extends ConsumerWidget {
+  final Activity activity;
+  const HeatmapPage({super.key, required this.activity});
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.surface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withOpacity(.35),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: child,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final base   = activity.color;
+    final stats  = ref.watch(lastNDaysProvider(LastNDaysArgs(activityId: activity.id, n: 90)));
+
+    return Scaffold(
+      appBar: AppBar(title: Text("${activity.emoji} ${activity.name} — Heatmap")),
+      body: stats.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text("Erreur: $e")),
+        data: (days) {
+          // Map<DateTime,int> pour le widget Heatmap
+          final map = <DateTime, int>{ for (final d in days) d.date : d.minutes };
+          return ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Heatmap(
+                    data: map,
+                    baseColor: base,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
