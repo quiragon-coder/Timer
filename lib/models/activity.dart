@@ -5,19 +5,21 @@ part 'activity.g.dart';
 
 @collection
 class Activity {
+  /// Id interne Isar
   Id isarId = Isar.autoIncrement;
 
-  /// Id logique (String) que l’UI utilise partout
+  /// Id logique String (utilisé partout dans l’UI/services)
   @Index(unique: true, replace: true)
   late String id;
 
   late String name;
   String emoji = '⏱️';
 
-  /// Stockage couleur en int
+  /// Couleur stockée comme entier ARGB
   @Index()
   late int colorValue;
 
+  /// Objectifs en minutes (on conserve les mêmes noms que ton UI)
   int dailyGoalMinutes = 0;
   int weeklyGoalMinutes = 0;
   int monthlyGoalMinutes = 0;
@@ -34,7 +36,13 @@ class Activity {
     this.yearlyGoalMinutes = 0,
   }) : colorValue = color.value;
 
+  /// ----- Helpers non persistés -----
+
+  @ignore
   Color get color => Color(colorValue);
+
+  @ignore
+  set color(Color c) => colorValue = c.value;
 
   Activity copyWith({
     String? id,
