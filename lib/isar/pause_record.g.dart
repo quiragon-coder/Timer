@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'pause.dart';
+part of 'pause_record.dart';
 
 // **************************************************************************
 // IsarCollectionGenerator
@@ -9,13 +9,13 @@ part of 'pause.dart';
 // coverage:ignore-file
 // ignore_for_file: duplicate_ignore, non_constant_identifier_names, constant_identifier_names, invalid_use_of_protected_member, unnecessary_cast, prefer_const_constructors, lines_longer_than_80_chars, require_trailing_commas, inference_failure_on_function_invocation, unnecessary_parenthesis, unnecessary_raw_strings, unnecessary_null_checks, join_return_with_assignment, prefer_final_locals, avoid_js_rounded_ints, avoid_positional_boolean_parameters, always_specify_types
 
-extension GetPauseCollection on Isar {
-  IsarCollection<Pause> get pauses => this.collection();
+extension GetPauseRecordCollection on Isar {
+  IsarCollection<PauseRecord> get pauseRecords => this.collection();
 }
 
-const PauseSchema = CollectionSchema(
-  name: r'Pause',
-  id: -9061149672463641779,
+const PauseRecordSchema = CollectionSchema(
+  name: r'PauseRecord',
+  id: 961735146266843781,
   properties: {
     r'endedAt': PropertySchema(
       id: 0,
@@ -33,10 +33,10 @@ const PauseSchema = CollectionSchema(
       type: IsarType.dateTime,
     )
   },
-  estimateSize: _pauseEstimateSize,
-  serialize: _pauseSerialize,
-  deserialize: _pauseDeserialize,
-  deserializeProp: _pauseDeserializeProp,
+  estimateSize: _pauseRecordEstimateSize,
+  serialize: _pauseRecordSerialize,
+  deserialize: _pauseRecordDeserialize,
+  deserializeProp: _pauseRecordDeserializeProp,
   idName: r'id',
   indexes: {
     r'sessionId': IndexSchema(
@@ -51,18 +51,31 @@ const PauseSchema = CollectionSchema(
           caseSensitive: false,
         )
       ],
+    ),
+    r'startedAt': IndexSchema(
+      id: 8114395319341636597,
+      name: r'startedAt',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'startedAt',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
     )
   },
   links: {},
   embeddedSchemas: {},
-  getId: _pauseGetId,
-  getLinks: _pauseGetLinks,
-  attach: _pauseAttach,
+  getId: _pauseRecordGetId,
+  getLinks: _pauseRecordGetLinks,
+  attach: _pauseRecordAttach,
   version: '3.1.0+1',
 );
 
-int _pauseEstimateSize(
-  Pause object,
+int _pauseRecordEstimateSize(
+  PauseRecord object,
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
@@ -70,8 +83,8 @@ int _pauseEstimateSize(
   return bytesCount;
 }
 
-void _pauseSerialize(
-  Pause object,
+void _pauseRecordSerialize(
+  PauseRecord object,
   IsarWriter writer,
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
@@ -81,22 +94,21 @@ void _pauseSerialize(
   writer.writeDateTime(offsets[2], object.startedAt);
 }
 
-Pause _pauseDeserialize(
+PauseRecord _pauseRecordDeserialize(
   Id id,
   IsarReader reader,
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  final object = Pause(
-    endedAt: reader.readDateTimeOrNull(offsets[0]),
-    sessionId: reader.readLong(offsets[1]),
-    startedAt: reader.readDateTime(offsets[2]),
-  );
+  final object = PauseRecord();
+  object.endedAt = reader.readDateTimeOrNull(offsets[0]);
   object.id = id;
+  object.sessionId = reader.readLong(offsets[1]);
+  object.startedAt = reader.readDateTime(offsets[2]);
   return object;
 }
 
-P _pauseDeserializeProp<P>(
+P _pauseRecordDeserializeProp<P>(
   IsarReader reader,
   int propertyId,
   int offset,
@@ -114,36 +126,47 @@ P _pauseDeserializeProp<P>(
   }
 }
 
-Id _pauseGetId(Pause object) {
+Id _pauseRecordGetId(PauseRecord object) {
   return object.id;
 }
 
-List<IsarLinkBase<dynamic>> _pauseGetLinks(Pause object) {
+List<IsarLinkBase<dynamic>> _pauseRecordGetLinks(PauseRecord object) {
   return [];
 }
 
-void _pauseAttach(IsarCollection<dynamic> col, Id id, Pause object) {
+void _pauseRecordAttach(
+    IsarCollection<dynamic> col, Id id, PauseRecord object) {
   object.id = id;
 }
 
-extension PauseQueryWhereSort on QueryBuilder<Pause, Pause, QWhere> {
-  QueryBuilder<Pause, Pause, QAfterWhere> anyId() {
+extension PauseRecordQueryWhereSort
+    on QueryBuilder<PauseRecord, PauseRecord, QWhere> {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhere> anyId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(const IdWhereClause.any());
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhere> anySessionId() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhere> anySessionId() {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
         const IndexWhereClause.any(indexName: r'sessionId'),
       );
     });
   }
+
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhere> anyStartedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'startedAt'),
+      );
+    });
+  }
 }
 
-extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
-  QueryBuilder<Pause, Pause, QAfterWhereClause> idEqualTo(Id id) {
+extension PauseRecordQueryWhere
+    on QueryBuilder<PauseRecord, PauseRecord, QWhereClause> {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> idEqualTo(Id id) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IdWhereClause.between(
         lower: id,
@@ -152,7 +175,8 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> idNotEqualTo(Id id) {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> idNotEqualTo(
+      Id id) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
         return query
@@ -174,7 +198,7 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> idGreaterThan(Id id,
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> idGreaterThan(Id id,
       {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
@@ -183,7 +207,7 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> idLessThan(Id id,
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> idLessThan(Id id,
       {bool include = false}) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(
@@ -192,7 +216,7 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> idBetween(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> idBetween(
     Id lowerId,
     Id upperId, {
     bool includeLower = true,
@@ -208,7 +232,7 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> sessionIdEqualTo(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> sessionIdEqualTo(
       int sessionId) {
     return QueryBuilder.apply(this, (query) {
       return query.addWhereClause(IndexWhereClause.equalTo(
@@ -218,7 +242,7 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> sessionIdNotEqualTo(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> sessionIdNotEqualTo(
       int sessionId) {
     return QueryBuilder.apply(this, (query) {
       if (query.whereSort == Sort.asc) {
@@ -253,7 +277,8 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> sessionIdGreaterThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause>
+      sessionIdGreaterThan(
     int sessionId, {
     bool include = false,
   }) {
@@ -267,7 +292,7 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> sessionIdLessThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> sessionIdLessThan(
     int sessionId, {
     bool include = false,
   }) {
@@ -281,7 +306,7 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterWhereClause> sessionIdBetween(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> sessionIdBetween(
     int lowerSessionId,
     int upperSessionId, {
     bool includeLower = true,
@@ -297,10 +322,103 @@ extension PauseQueryWhere on QueryBuilder<Pause, Pause, QWhereClause> {
       ));
     });
   }
+
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> startedAtEqualTo(
+      DateTime startedAt) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'startedAt',
+        value: [startedAt],
+      ));
+    });
+  }
+
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> startedAtNotEqualTo(
+      DateTime startedAt) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'startedAt',
+              lower: [],
+              upper: [startedAt],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'startedAt',
+              lower: [startedAt],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'startedAt',
+              lower: [startedAt],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'startedAt',
+              lower: [],
+              upper: [startedAt],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause>
+      startedAtGreaterThan(
+    DateTime startedAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'startedAt',
+        lower: [startedAt],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> startedAtLessThan(
+    DateTime startedAt, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'startedAt',
+        lower: [],
+        upper: [startedAt],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<PauseRecord, PauseRecord, QAfterWhereClause> startedAtBetween(
+    DateTime lowerStartedAt,
+    DateTime upperStartedAt, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'startedAt',
+        lower: [lowerStartedAt],
+        includeLower: includeLower,
+        upper: [upperStartedAt],
+        includeUpper: includeUpper,
+      ));
+    });
+  }
 }
 
-extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> endedAtIsNull() {
+extension PauseRecordQueryFilter
+    on QueryBuilder<PauseRecord, PauseRecord, QFilterCondition> {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      endedAtIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
         property: r'endedAt',
@@ -308,7 +426,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> endedAtIsNotNull() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      endedAtIsNotNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNotNull(
         property: r'endedAt',
@@ -316,7 +435,7 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> endedAtEqualTo(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition> endedAtEqualTo(
       DateTime? value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
@@ -326,7 +445,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> endedAtGreaterThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      endedAtGreaterThan(
     DateTime? value, {
     bool include = false,
   }) {
@@ -339,7 +459,7 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> endedAtLessThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition> endedAtLessThan(
     DateTime? value, {
     bool include = false,
   }) {
@@ -352,7 +472,7 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> endedAtBetween(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition> endedAtBetween(
     DateTime? lower,
     DateTime? upper, {
     bool includeLower = true,
@@ -369,7 +489,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> idEqualTo(Id value) {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition> idEqualTo(
+      Id value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'id',
@@ -378,7 +499,7 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> idGreaterThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition> idGreaterThan(
     Id value, {
     bool include = false,
   }) {
@@ -391,7 +512,7 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> idLessThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition> idLessThan(
     Id value, {
     bool include = false,
   }) {
@@ -404,7 +525,7 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> idBetween(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition> idBetween(
     Id lower,
     Id upper, {
     bool includeLower = true,
@@ -421,8 +542,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> sessionIdEqualTo(
-      int value) {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      sessionIdEqualTo(int value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'sessionId',
@@ -431,7 +552,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> sessionIdGreaterThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      sessionIdGreaterThan(
     int value, {
     bool include = false,
   }) {
@@ -444,7 +566,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> sessionIdLessThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      sessionIdLessThan(
     int value, {
     bool include = false,
   }) {
@@ -457,7 +580,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> sessionIdBetween(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      sessionIdBetween(
     int lower,
     int upper, {
     bool includeLower = true,
@@ -474,8 +598,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> startedAtEqualTo(
-      DateTime value) {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      startedAtEqualTo(DateTime value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'startedAt',
@@ -484,7 +608,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> startedAtGreaterThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      startedAtGreaterThan(
     DateTime value, {
     bool include = false,
   }) {
@@ -497,7 +622,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> startedAtLessThan(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      startedAtLessThan(
     DateTime value, {
     bool include = false,
   }) {
@@ -510,7 +636,8 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterFilterCondition> startedAtBetween(
+  QueryBuilder<PauseRecord, PauseRecord, QAfterFilterCondition>
+      startedAtBetween(
     DateTime lower,
     DateTime upper, {
     bool includeLower = true,
@@ -528,138 +655,144 @@ extension PauseQueryFilter on QueryBuilder<Pause, Pause, QFilterCondition> {
   }
 }
 
-extension PauseQueryObject on QueryBuilder<Pause, Pause, QFilterCondition> {}
+extension PauseRecordQueryObject
+    on QueryBuilder<PauseRecord, PauseRecord, QFilterCondition> {}
 
-extension PauseQueryLinks on QueryBuilder<Pause, Pause, QFilterCondition> {}
+extension PauseRecordQueryLinks
+    on QueryBuilder<PauseRecord, PauseRecord, QFilterCondition> {}
 
-extension PauseQuerySortBy on QueryBuilder<Pause, Pause, QSortBy> {
-  QueryBuilder<Pause, Pause, QAfterSortBy> sortByEndedAt() {
+extension PauseRecordQuerySortBy
+    on QueryBuilder<PauseRecord, PauseRecord, QSortBy> {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> sortByEndedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'endedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> sortByEndedAtDesc() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> sortByEndedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'endedAt', Sort.desc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> sortBySessionId() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> sortBySessionId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sessionId', Sort.asc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> sortBySessionIdDesc() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> sortBySessionIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sessionId', Sort.desc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> sortByStartedAt() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> sortByStartedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'startedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> sortByStartedAtDesc() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> sortByStartedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'startedAt', Sort.desc);
     });
   }
 }
 
-extension PauseQuerySortThenBy on QueryBuilder<Pause, Pause, QSortThenBy> {
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenByEndedAt() {
+extension PauseRecordQuerySortThenBy
+    on QueryBuilder<PauseRecord, PauseRecord, QSortThenBy> {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenByEndedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'endedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenByEndedAtDesc() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenByEndedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'endedAt', Sort.desc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenById() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenById() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.asc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenByIdDesc() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenByIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.desc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenBySessionId() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenBySessionId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sessionId', Sort.asc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenBySessionIdDesc() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenBySessionIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'sessionId', Sort.desc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenByStartedAt() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenByStartedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'startedAt', Sort.asc);
     });
   }
 
-  QueryBuilder<Pause, Pause, QAfterSortBy> thenByStartedAtDesc() {
+  QueryBuilder<PauseRecord, PauseRecord, QAfterSortBy> thenByStartedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'startedAt', Sort.desc);
     });
   }
 }
 
-extension PauseQueryWhereDistinct on QueryBuilder<Pause, Pause, QDistinct> {
-  QueryBuilder<Pause, Pause, QDistinct> distinctByEndedAt() {
+extension PauseRecordQueryWhereDistinct
+    on QueryBuilder<PauseRecord, PauseRecord, QDistinct> {
+  QueryBuilder<PauseRecord, PauseRecord, QDistinct> distinctByEndedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'endedAt');
     });
   }
 
-  QueryBuilder<Pause, Pause, QDistinct> distinctBySessionId() {
+  QueryBuilder<PauseRecord, PauseRecord, QDistinct> distinctBySessionId() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'sessionId');
     });
   }
 
-  QueryBuilder<Pause, Pause, QDistinct> distinctByStartedAt() {
+  QueryBuilder<PauseRecord, PauseRecord, QDistinct> distinctByStartedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'startedAt');
     });
   }
 }
 
-extension PauseQueryProperty on QueryBuilder<Pause, Pause, QQueryProperty> {
-  QueryBuilder<Pause, int, QQueryOperations> idProperty() {
+extension PauseRecordQueryProperty
+    on QueryBuilder<PauseRecord, PauseRecord, QQueryProperty> {
+  QueryBuilder<PauseRecord, int, QQueryOperations> idProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'id');
     });
   }
 
-  QueryBuilder<Pause, DateTime?, QQueryOperations> endedAtProperty() {
+  QueryBuilder<PauseRecord, DateTime?, QQueryOperations> endedAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'endedAt');
     });
   }
 
-  QueryBuilder<Pause, int, QQueryOperations> sessionIdProperty() {
+  QueryBuilder<PauseRecord, int, QQueryOperations> sessionIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'sessionId');
     });
   }
 
-  QueryBuilder<Pause, DateTime, QQueryOperations> startedAtProperty() {
+  QueryBuilder<PauseRecord, DateTime, QQueryOperations> startedAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'startedAt');
     });

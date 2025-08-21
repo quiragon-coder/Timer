@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'services/database_service_isar.dart';
+import 'providers.dart';
 
 import 'pages/activities_list_page.dart';
 

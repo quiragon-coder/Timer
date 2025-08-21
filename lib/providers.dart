@@ -1,14 +1,6 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'services/database_service.dart';
-import 'models/activity.dart';
+import 'services/database_service_isar.dart';
 
-/// Service principal en mémoire
-final dbProvider = ChangeNotifierProvider<DatabaseService>((ref) {
-  return DatabaseService();
-});
-
-/// Liste d’activités (Future pour rester compatible avec .when)
-final activitiesProvider = FutureProvider<List<Activity>>((ref) async {
-  final db = ref.watch(dbProvider);
-  return db.activities;
+final dbProvider = ChangeNotifierProvider<DatabaseServiceIsar>((ref) {
+  // On l’initialise dans main.dart et on override ce provider avec l’instance.
+  throw UnimplementedError('Initialisé via override dans main.dart');
 });
