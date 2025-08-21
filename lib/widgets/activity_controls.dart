@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers.dart'; // dbProvider
 
-import '../providers.dart';
-
-class ActivityControls extends ConsumerWidget {
+class ActivityControls extends ConsumerStatefulWidget {
   final String activityId;
   final bool compact;
 
@@ -14,58 +13,89 @@ class ActivityControls extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // IMPORTANT: watch (et pas read) pour que l'UI reflète l'état courant
+  ConsumerState<ActivityControls> createState() => _ActivityControlsState();
+}
+
+class _ActivityControlsState extends ConsumerState<ActivityControls> {
+  Future<void> _start() async {
+    final db = ref.read(dbProvider);
+    await db.start(widget.activityId);          // ⬅ utilise start(...)
+    if (mounted) setState(() {});               // petite secousse UI
+  }
+
+  Future<void> _togglePause() async {
+    final db = ref.read(dbProvider);
+    if (!db.isRunning(widget.activityId)) return;
+    await db.togglePause(widget.activityId);    // ⬅ utilise togglePause(...)
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _stop() async {
+    final db = ref.read(dbProvider);
+    if (!db.isRunning(widget.activityId)) return;
+    await db.stop(widget.activityId);           // ⬅ utilise stop(...)
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // IMPORTANT : watch (et non read) pour reconstruire quand notifyListeners() est appelé.
     final db = ref.watch(dbProvider);
 
-    final bool running = db.isRunning(activityId);
-    final bool paused  = db.isPaused(activityId);
+    final running = db.isRunning(widget.activityId);
+    final paused  = db.isPaused(widget.activityId);
 
-    final pad = const EdgeInsets.symmetric(horizontal: 16, vertical: 10);
+    final pad = widget.compact ? const EdgeInsets.symmetric(horizontal: 8, vertical: 6)
+        : const EdgeInsets.symmetric(horizontal: 12, vertical: 10);
 
-    return Wrap(
-      spacing: compact ? 8 : 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        // Démarrer: uniquement quand pas en cours
+    // Boutons en fonction de l’état:
+    // - non démarré : [Démarrer]
+    // - démarré & en cours : [Pause] [Arrêter]
+    // - démarré & en pause : [Reprendre] [Arrêter]
+    List<Widget> buttons;
+    if (!running) {
+      buttons = [
         FilledButton.icon(
-          onPressed: running ? null : () async {
-            await db.start(activityId);
-          },
+          onPressed: _start,
           icon: const Icon(Icons.play_arrow),
           label: const Text('Démarrer'),
-          style: ButtonStyle(padding: MaterialStatePropertyAll(pad)),
         ),
-
-        // Pause / Reprendre: visible quand en cours
+      ];
+    } else if (paused) {
+      buttons = [
         FilledButton.icon(
-          onPressed: running ? () async {
-            await db.togglePause(activityId);
-          } : null,
-          icon: Icon(paused ? Icons.play_arrow : Icons.pause),
-          label: Text(paused ? 'Reprendre' : 'Mettre en pause'),
-          style: ButtonStyle(padding: MaterialStatePropertyAll(pad)),
+          onPressed: _togglePause,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Reprendre'),
         ),
-
-        // Stop: actif si en cours (même en pause)
-        FilledButton.icon(
-          onPressed: running || paused ? () async {
-            await db.stop(activityId);
-          } : null,
+        OutlinedButton.icon(
+          onPressed: _stop,
           icon: const Icon(Icons.stop),
-          label: const Text('Stop'),
-          style: ButtonStyle(
-            padding: MaterialStatePropertyAll(pad),
-            foregroundColor: MaterialStatePropertyAll(
-              Theme.of(context).colorScheme.error,
-            ),
-            backgroundColor: MaterialStatePropertyAll(
-              Theme.of(context).colorScheme.error.withOpacity(.10),
-            ),
-          ),
+          label: const Text('Arrêter'),
         ),
-      ],
+      ];
+    } else {
+      buttons = [
+        FilledButton.icon(
+          onPressed: _togglePause,
+          icon: const Icon(Icons.pause),
+          label: const Text('Pause'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _stop,
+          icon: const Icon(Icons.stop),
+          label: const Text('Arrêter'),
+        ),
+      ];
+    }
+
+    return Padding(
+      padding: pad,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: buttons,
+      ),
     );
   }
 }
