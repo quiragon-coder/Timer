@@ -3,88 +3,69 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 
-class ActivityControls extends ConsumerStatefulWidget {
+class ActivityControls extends ConsumerWidget {
   final String activityId;
   final bool compact;
-  const ActivityControls({super.key, required this.activityId, this.compact = false});
+
+  const ActivityControls({
+    super.key,
+    required this.activityId,
+    this.compact = false,
+  });
 
   @override
-  ConsumerState<ActivityControls> createState() => _ActivityControlsState();
-}
-
-class _ActivityControlsState extends ConsumerState<ActivityControls> {
-  Future<void> _start() async {
-    final db = ref.read(dbProvider);
-    await db.start(widget.activityId);     // <- wrappers normalisés
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _togglePause() async {
-    final db = ref.read(dbProvider);
-    if (!db.isRunning(widget.activityId)) return;
-    await db.togglePause(widget.activityId);
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _stop() async {
-    final db = ref.read(dbProvider);
-    if (!db.isRunning(widget.activityId)) return;
-    await db.stop(widget.activityId);
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // IMPORTANT: watch (et pas read) pour que l'UI reflète l'état courant
     final db = ref.watch(dbProvider);
-    final running = db.isRunning(widget.activityId);
-    final paused  = db.isPaused(widget.activityId);
 
-    final children = <Widget>[
-      // START
-      FilledButton.icon(
-        onPressed: running ? null : _start,
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('Démarrer'),
-      ),
+    final bool running = db.isRunning(activityId);
+    final bool paused  = db.isPaused(activityId);
 
-      // PAUSE / REPRENDRE (visible seulement si en cours)
-      if (running)
-        FilledButton.tonalIcon(
-          onPressed: _togglePause,
-          icon: Icon(paused ? Icons.play_arrow : Icons.pause),
-          label: Text(paused ? 'Reprendre' : 'Mettre en pause'),
+    final pad = const EdgeInsets.symmetric(horizontal: 16, vertical: 10);
+
+    return Wrap(
+      spacing: compact ? 8 : 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        // Démarrer: uniquement quand pas en cours
+        FilledButton.icon(
+          onPressed: running ? null : () async {
+            await db.start(activityId);
+          },
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Démarrer'),
+          style: ButtonStyle(padding: MaterialStatePropertyAll(pad)),
         ),
 
-      // STOP (visible seulement si en cours)
-      if (running)
+        // Pause / Reprendre: visible quand en cours
         FilledButton.icon(
-          onPressed: _stop,
+          onPressed: running ? () async {
+            await db.togglePause(activityId);
+          } : null,
+          icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+          label: Text(paused ? 'Reprendre' : 'Mettre en pause'),
+          style: ButtonStyle(padding: MaterialStatePropertyAll(pad)),
+        ),
+
+        // Stop: actif si en cours (même en pause)
+        FilledButton.icon(
+          onPressed: running || paused ? () async {
+            await db.stop(activityId);
+          } : null,
           icon: const Icon(Icons.stop),
           label: const Text('Stop'),
           style: ButtonStyle(
-            backgroundColor: MaterialStateProperty.resolveWith((states) {
-              return Theme.of(context).colorScheme.errorContainer;
-            }),
-            foregroundColor: MaterialStateProperty.resolveWith((states) {
-              return Theme.of(context).colorScheme.onErrorContainer;
-            }),
+            padding: MaterialStatePropertyAll(pad),
+            foregroundColor: MaterialStatePropertyAll(
+              Theme.of(context).colorScheme.error,
+            ),
+            backgroundColor: MaterialStatePropertyAll(
+              Theme.of(context).colorScheme.error.withOpacity(.10),
+            ),
           ),
         ),
-    ];
-
-    if (widget.compact) {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: children,
-      );
-    }
-
-    return OverflowBar(
-      alignment: MainAxisAlignment.start,
-      spacing: 12,
-      overflowSpacing: 8,
-      children: children,
+      ],
     );
   }
 }
