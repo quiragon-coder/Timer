@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:isar/isar.dart';
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart' as path;
 
 import '../models/activity.dart';

@@ -1,60 +1,57 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'services/database_service.dart';
+import 'services/stats_service.dart';
 
-import './providers.dart' show dbProvider;
-import './services/stats_service.dart' show StatsService;
-import './models/stats.dart' show DailyStat, HourlyBucket;
-
-/// Fournit un StatsService branché sur le DatabaseService courant.
+/// Fournit une instance unique de StatsService branchée sur dbProvider.
 final statsServiceProvider = Provider<StatsService>((ref) {
-  final db = ref.read(dbProvider);
+  final db = ref.watch(dbProvider);
   return StatsService(db);
 });
 
-/// Aujourd'hui (minutes)
+/// Minutes aujourd’hui pour une activité.
 final minutesTodayProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.read(statsServiceProvider);
-  return s.minutesToday(activityId);
+Provider.family<int, String>((ref, activityId) {
+  final stats = ref.watch(statsServiceProvider);
+  return stats.minutesToday(activityId);
 });
 
-/// Cette semaine (minutes)
+/// Minutes cette semaine pour une activité.
 final minutesThisWeekProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.read(statsServiceProvider);
-  return s.minutesThisWeek(activityId);
+Provider.family<int, String>((ref, activityId) {
+  final stats = ref.watch(statsServiceProvider);
+  return stats.minutesThisWeek(activityId);
 });
 
-/// Ce mois (minutes)
+/// Minutes ce mois pour une activité.
 final minutesThisMonthProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.read(statsServiceProvider);
-  return s.minutesThisMonth(activityId);
+Provider.family<int, String>((ref, activityId) {
+  final stats = ref.watch(statsServiceProvider);
+  return stats.minutesThisMonth(activityId);
 });
 
-/// Cette année (minutes)
+/// Minutes cette année pour une activité.
 final minutesThisYearProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.read(statsServiceProvider);
-  return s.minutesThisYear(activityId);
+Provider.family<int, String>((ref, activityId) {
+  final stats = ref.watch(statsServiceProvider);
+  return stats.minutesThisYear(activityId);
 });
 
-/// Args pour N derniers jours
+/// Buckets horaires pour aujourd’hui (24 cases).
+final hourlyTodayProvider =
+Provider.family<List<int>, String>((ref, activityId) {
+  final stats = ref.watch(statsServiceProvider);
+  return stats.hourlyToday(activityId);
+});
+
+/// Données des N derniers jours (du plus ancien au plus récent).
 class LastNDaysArgs {
   final String activityId;
   final int n;
-  const LastNDaysArgs({required this.activityId, required this.n});
+  LastNDaysArgs(this.activityId, this.n);
 }
 
-/// N derniers jours (liste de DailyStat)
 final lastNDaysProvider =
-FutureProvider.family<List<DailyStat>, LastNDaysArgs>((ref, args) async {
-  final s = ref.read(statsServiceProvider);
-  return s.lastNDays(args.activityId, n: args.n);
-});
-
-/// Buckets horaires d'aujourd'hui (0..23)
-final hourlyTodayProvider =
-FutureProvider.family<List<HourlyBucket>, String>((ref, activityId) async {
-  final s = ref.read(statsServiceProvider);
-  return s.hourlyToday(activityId);
+Provider.family<List<dynamic>, LastNDaysArgs>((ref, args) {
+  final stats = ref.watch(statsServiceProvider);
+  return stats.lastNDays(args.activityId, args.n);
 });
