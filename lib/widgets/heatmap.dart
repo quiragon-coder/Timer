@@ -1,180 +1,84 @@
-﻿import "package:flutter/material.dart";
+﻿import 'package:flutter/material.dart';
 
+/// Heatmap très simple façon "GitHub contribution"
+/// [data]: Map jour -> minutes
+/// [baseColor]: couleur des carrés (l’opacité varie avec l’intensité)
+/// [onDayTap]: callback quand on tape un carré
 class Heatmap extends StatelessWidget {
-  final Map<DateTime, int> data;   // day -> minutes
+  final Map<DateTime, int> data;
   final Color baseColor;
-  final int maxMinutes;            // minutes for full intensity
-  final EdgeInsets padding;
+  final void Function(DateTime day, int minutes)? onDayTap;
 
   const Heatmap({
     super.key,
     required this.data,
     required this.baseColor,
-    this.maxMinutes = 60,
-    this.padding = const EdgeInsets.all(12),
+    this.onDayTap,
   });
+
+  int _levelFor(int minutes) {
+    if (minutes <= 0) return 0;
+    if (minutes < 10) return 1;
+    if (minutes < 30) return 2;
+    if (minutes < 60) return 3;
+    return 4;
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (data.isEmpty) {
-      return const Center(child: Text("No data"));
+    // Ordre chronologique par jour
+    final days = data.keys.toList()..sort();
+    if (days.isEmpty) {
+      return const SizedBox(height: 80);
     }
 
-    final dates = data.keys.toList()..sort();
-    final first = _mondayOfWeek(DateTime(dates.first.year, dates.first.month, dates.first.day));
-    final last  = _sundayOfWeek(DateTime(dates.last.year,  dates.last.month,  dates.last.day));
+    // grille 7 lignes (lun..dim), colonnes au fil des semaines
+    // On part du lundi de la 1ère semaine
+    final first = days.first;
+    final firstMonday =
+    first.subtract(Duration(days: (first.weekday - 1) % 7));
+    final last = days.last;
+    final weeks =
+    (last.difference(firstMonday).inDays / 7).ceil().clamp(1, 54);
 
-    final normalized = <DateTime, int>{};
-    for (final e in data.entries) {
-      final d = DateTime(e.key.year, e.key.month, e.key.day);
-      normalized[d] = e.value;
+    // build datastruct {weekday,row} -> color level
+    final Map<int, Map<int, int>> grid = {}; // col -> {row -> level}
+    for (final d in days) {
+      final col = d.difference(firstMonday).inDays ~/ 7;
+      final row = (d.weekday - 1) % 7;
+      grid.putIfAbsent(col, () => {});
+      grid[col]![row] = _levelFor(data[d] ?? 0);
     }
 
-    final daysCount = last.difference(first).inDays + 1;
-    final weeks = (daysCount / 7).ceil();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth.isFinite ? constraints.maxWidth : 600.0;
-        final colSpacing = 2.0;
-        final rowSpacing = 2.0;
-        final sidePadding = padding.left + padding.right;
-        final monthLabelHeight = 16.0;
-
-        final totalColSpacing = colSpacing * (weeks - 1);
-        final cellSize = ((maxWidth - sidePadding - totalColSpacing) / weeks).clamp(8.0, 16.0);
-
-        Color levelColor(double t) => Color.lerp(Colors.transparent, baseColor, t) ?? baseColor;
-
-        final cells = <Widget>[];
-        final monthLabels = <int, String>{};
-        DateTime iter = first;
-        int prevMonth = -1;
-
-        for (int w = 0; w < weeks; w++) {
-          final monthAtCol = iter.month;
-          if (monthAtCol != prevMonth) {
-            monthLabels[w] = _monthShort(monthAtCol);
-            prevMonth = monthAtCol;
-          }
-
-          final columnCells = <Widget>[];
-          for (int weekday = 0; weekday < 7; weekday++) {
-            final day = iter.add(Duration(days: weekday));
-            if (day.isAfter(last)) break;
-
-            final key = DateTime(day.year, day.month, day.day);
-            final minutes = normalized[key] ?? 0;
-
-            double t;
-            if (maxMinutes <= 0) {
-              t = minutes > 0 ? 1.0 : 0.0;
-            } else {
-              t = (minutes / maxMinutes).clamp(0.0, 1.0);
-            }
-            final color = levelColor(t);
-
-            columnCells.add(Container(
-              width: cellSize,
-              height: cellSize,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(3),
-                border: Border.all(color: Colors.black.withOpacity(0.04), width: 0.5),
-              ),
-            ));
-          }
-
-          cells.add(Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(height: monthLabelHeight),
-              ..._withRowSpacing(columnCells, rowSpacing),
-            ],
-          ));
-
-          if (w < weeks - 1) {
-            cells.add(SizedBox(width: colSpacing));
-          }
-          iter = iter.add(const Duration(days: 7));
-        }
-
-        final monthRow = <Widget>[];
-        for (int w = 0; w < weeks; w++) {
-          final label = monthLabels[w] ?? "";
-          monthRow.add(SizedBox(
-            width: cellSize,
-            height: monthLabelHeight,
-            child: Center(child: Text(label, style: const TextStyle(fontSize: 10))),
-          ));
-          if (w < weeks - 1) monthRow.add(SizedBox(width: colSpacing));
-        }
-
-        final grid = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: monthRow),
-            Row(children: cells),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Text("Less", style: TextStyle(fontSize: 10)),
-                const SizedBox(width: 6),
-                _legendBox(Color.lerp(Colors.transparent, baseColor, 0.2) ?? baseColor, cellSize),
-                const SizedBox(width: 2),
-                _legendBox(Color.lerp(Colors.transparent, baseColor, 0.4) ?? baseColor, cellSize),
-                const SizedBox(width: 2),
-                _legendBox(Color.lerp(Colors.transparent, baseColor, 0.6) ?? baseColor, cellSize),
-                const SizedBox(width: 2),
-                _legendBox(Color.lerp(Colors.transparent, baseColor, 0.8) ?? baseColor, cellSize),
-                const SizedBox(width: 6),
-                const Text("More", style: TextStyle(fontSize: 10)),
-              ],
+    return SizedBox(
+      height: 7 * 14 + 6 * 3, // 14px cases + 3px gap
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: List.generate(weeks, (col) {
+          return Padding(
+            padding: const EdgeInsets.only(right: 3),
+            child: Column(
+              children: List.generate(7, (row) {
+                final level = grid[col]?[row] ?? 0;
+                final opacity = [0.10, 0.25, 0.45, 0.65, 0.85][level];
+                // retrouver la date correspondante
+                final day = firstMonday.add(Duration(days: col * 7 + row));
+                return GestureDetector(
+                  onTap: onDayTap == null ? null : () => onDayTap!(day, data[day] ?? 0),
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    margin: const EdgeInsets.only(bottom: 3),
+                    decoration: BoxDecoration(
+                      color: baseColor.withOpacity(opacity),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                );
+              }),
             ),
-          ],
-        );
-
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: padding,
-          child: grid,
-        );
-      },
-    );
-  }
-
-  static List<Widget> _withRowSpacing(List<Widget> items, double space) {
-    final out = <Widget>[];
-    for (var i = 0; i < items.length; i++) {
-      out.add(items[i]);
-      if (i < items.length - 1) out.add(SizedBox(height: space));
-    }
-    return out;
-  }
-
-  static String _monthShort(int m) {
-    const names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return (m >= 1 && m <= 12) ? names[m] : "";
-  }
-
-  static DateTime _mondayOfWeek(DateTime d) {
-    final weekday = d.weekday; // 1=Mon..7=Sun
-    return DateTime(d.year, d.month, d.day).subtract(Duration(days: weekday - 1));
-  }
-
-  static DateTime _sundayOfWeek(DateTime d) {
-    final weekday = d.weekday;
-    return DateTime(d.year, d.month, d.day).add(Duration(days: 7 - weekday));
-  }
-
-  static Widget _legendBox(Color c, double s) {
-    return Container(
-      width: s, height: s,
-      decoration: BoxDecoration(
-        color: c,
-        borderRadius: BorderRadius.circular(3),
-        border: Border.all(color: Colors.black12, width: .5),
+          );
+        }),
       ),
     );
   }

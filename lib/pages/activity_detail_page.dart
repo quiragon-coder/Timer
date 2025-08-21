@@ -1,11 +1,11 @@
 ﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../models/activity.dart';
-import '../providers.dart';                // dbProvider
-import '../providers_stats.dart';         // lastNDaysProvider, LastNDaysArgs
+import '../models/session.dart';
+import '../models/pause.dart';
+import '../providers.dart';
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
 
@@ -21,42 +21,29 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   Timer? _ticker;
 
   @override
+  void initState() {
+    super.initState();
+    // Ticker global pour garder le badge et l’historique bien à jour
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
   void dispose() {
     _ticker?.cancel();
     super.dispose();
   }
 
-  void _ensureTicker(bool running) {
-    final active = _ticker?.isActive ?? false;
-    if (running && !active) {
-      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
-    } else if (!running && active) {
-      _ticker?.cancel();
-      _ticker = null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final db = ref.watch(dbProvider); // reconstruit quand start/pause/stop notifie
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
+    final db = ref.watch(dbProvider);
+    final running = db.isRunning(widget.activity.id);
+    final paused = db.isPaused(widget.activity.id);
 
-    final id = widget.activity.id;
-    final running = db.isRunning(id);
-    final paused = db.isPaused(id);
-    _ensureTicker(running);
-
-    final elapsed = db.runningElapsed(id);
+    final elapsed = db.runningElapsed(widget.activity.id);
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
-
-    // Historique (totaux par jour) sur 7 jours
-    final last7Async = ref.watch(lastNDaysProvider(LastNDaysArgs(activityId: id, n: 7)));
-    final dayFmt = DateFormat.EEEE('fr_FR'); // ex. lundi
-    final dateFmt = DateFormat('d MMM', 'fr_FR');
 
     return Scaffold(
       appBar: AppBar(
@@ -71,126 +58,52 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: 8),
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: widget.activity.color,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            if (running)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (paused ? Colors.orange : Colors.green).withOpacity(.15),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(paused ? Icons.pause : Icons.timer_outlined, size: 16),
+                  const SizedBox(width: 6),
+                  Text("$mm:$ss"),
+                ]),
+              ),
           ],
         ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // En-tête + badge temps réel
-            Card(
-              elevation: 0,
-              color: cs.surface,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    // pastille couleur + emoji + nom
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: widget.activity.color,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(widget.activity.emoji, style: const TextStyle(fontSize: 22)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        widget.activity.name,
-                        style: tt.titleMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-
-                    // Badge ⏱ temps réel si en cours
-                    if (running)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: (paused ? Colors.orange : Colors.green).withOpacity(.12),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: paused ? Colors.orange : Colors.green,
-                            width: 0.75,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              paused ? Icons.pause_circle_outline : Icons.timer_outlined,
-                              size: 16,
-                              color: paused ? Colors.orange : Colors.green,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '$mm:$ss',
-                              style: tt.bodyMedium?.copyWith(
-                                color: paused ? Colors.orange : Colors.green,
-                                fontFeatures: const [FontFeature.tabularFigures()],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
             // Contrôles
-            ActivityControls(activityId: id),
-
-            const SizedBox(height: 12),
-
-            // Historique de session (simple: totaux par jour sur 7 jours)
             Card(
-              elevation: 0,
-              color: cs.surface,
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Historique (7 derniers jours)', style: tt.titleSmall),
-                    const SizedBox(height: 8),
-                    last7Async.when(
-                      loading: () => const Center(child: Padding(
-                        padding: EdgeInsets.all(12),
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )),
-                      error: (e, _) => Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text('Erreur: $e'),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        "Contrôles",
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
-                      data: (stats) {
-                        // On affiche même les jours à 0 min pour visibilité
-                        return ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: stats.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (_, i) {
-                            final s = stats[i]; // has: s.date (DateTime), s.minutes (int)
-                            final title = '${toBeginningOfSentenceCase(dayFmt.format(s.date))} ${dateFmt.format(s.date)}';
-                            return ListTile(
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(title),
-                              trailing: Text('${s.minutes} min'),
-                            );
-                          },
-                        );
-                      },
                     ),
+                    const SizedBox(height: 8),
+                    ActivityControls(activityId: widget.activity.id, compact: false),
                   ],
                 ),
               ),
@@ -198,11 +111,145 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
 
             const SizedBox(height: 12),
 
-            // Panel Stats (mini heatmap + charts)
-            ActivityStatsPanel(activityId: id),
+            // Historique (entre contrôles et graphs)
+            _buildHistory(context, db, widget.activity.id),
+
+            const SizedBox(height: 12),
+
+            // Graphs / stats (inclut la mini-heatmap)
+            ActivityStatsPanel(activityId: widget.activity.id),
           ],
         ),
       ),
     );
+  }
+
+  // ---------- Historique ----------
+
+  Widget _buildHistory(
+      BuildContext context,
+      dynamic db, // DatabaseService via provider
+      String activityId,
+      ) {
+    final sessions = List<Session>.from(db.listSessionsByActivity(activityId));
+    sessions.sort((a, b) => b.startAt.compareTo(a.startAt));
+
+    if (sessions.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              const Icon(Icons.history, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                "Aucun historique pour le moment.",
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "Historique",
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: sessions.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final s = sessions[i];
+                final pauses = List<Pause>.from(db.listPausesBySession(s.id));
+                final eff = _effectiveDuration(s, pauses);
+                final effStr = _formatDuration(eff);
+
+                final start = s.startAt;
+                final end = s.endAt;
+                final dateStr =
+                    "${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')} ${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}";
+                final endStr = end == null
+                    ? "en cours"
+                    : "${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}";
+
+                return ListTile(
+                  dense: true,
+                  leading: Icon(
+                    end == null ? Icons.play_circle : Icons.check_circle,
+                    color: end == null ? Colors.green : null,
+                  ),
+                  title: Text("$dateStr → $endStr"),
+                  subtitle: pauses.isEmpty
+                      ? Text("Durée effective : $effStr")
+                      : Text(
+                    "Durée effective : $effStr  •  ${pauses.length} pause${pauses.length > 1 ? 's' : ''}",
+                  ),
+                  trailing: Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(.10),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(effStr),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Duration _effectiveDuration(Session s, List<Pause> pauses) {
+    final now = DateTime.now();
+    final start = s.startAt;
+    final end = s.endAt ?? now;
+
+    // durée brute
+    int secs = end.difference(start).inSeconds;
+
+    // soustraire chaque pause (intersection)
+    for (final p in pauses) {
+      final ps = p.startAt;
+      final pe = p.endAt ?? now;
+      final isec = _overlapSeconds(start, end, ps, pe);
+      if (isec > 0) secs -= isec;
+    }
+    if (secs < 0) secs = 0;
+    return Duration(seconds: secs);
+  }
+
+  int _overlapSeconds(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd) {
+    final s = aStart.isAfter(bStart) ? aStart : bStart;
+    final e = aEnd.isBefore(bEnd) ? aEnd : bEnd;
+    return e.isAfter(s) ? e.difference(s).inSeconds : 0;
+  }
+
+  String _formatDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    if (h > 0) {
+      return "${h}h ${m.toString().padLeft(2, '0')}m";
+    } else {
+      return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
+    }
   }
 }

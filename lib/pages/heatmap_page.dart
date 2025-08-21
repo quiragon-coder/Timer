@@ -1,56 +1,57 @@
-﻿// lib/pages/heatmap_page.dart
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/stats.dart';              // DailyStat (day, minutes)
-import '../providers_stats.dart';           // lastNDaysProvider / LastNDaysArgs
-import '../widgets/heatmap.dart';           // Heatmap widget custom
+import '../providers_stats.dart';
+import '../models/stats.dart';
+import '../widgets/heatmap.dart';
 
 class ActivityHeatmapPage extends ConsumerWidget {
   final String activityId;
-  final int n; // nb de jours (ex: 365)
-
-  const ActivityHeatmapPage({
-    super.key,
-    required this.activityId,
-    required this.n,
-  });
+  const ActivityHeatmapPage({super.key, required this.activityId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statsAsync = ref.watch(lastNDaysProvider(LastNDaysArgs(
-      activityId: activityId,
-      n: n,
-    )));
+    // 365 jours
+    final async = ref.watch(
+      lastNDaysProvider(LastNDaysArgs(activityId: activityId, n: 365)),
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Heatmap')),
-      body: statsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur: $e')),
-        data: (List<DailyStat> stats) {
-          // conversion -> Map<DateTime,int>
-          final map = <DateTime, int>{
-            for (final s in stats) s.day: s.minutes,
-          };
-
-          return Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Heatmap(
-              data: map,
-              baseColor: Theme.of(context).colorScheme.primary,
-              onDayTap: (day, minutes) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '${day.toString().substring(0, 10)} : ${minutes} min',
-                    ),
+      appBar: AppBar(title: const Text("Heatmap annuelle")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: async.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text("Erreur: $e")),
+          data: (List<DailyStat> data) {
+            final map = <DateTime, int>{};
+            for (final d in data) {
+              map[d.day] = d.minutes;
+            }
+            return SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Heatmap(
+                    data: map,
+                    baseColor: Theme.of(context).colorScheme.primary,
+                    onDayTap: (day, minutes) {
+                      final dateStr = "${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}";
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("$dateStr • $minutes min")),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-          );
-        },
+                  const SizedBox(height: 12),
+                  Text(
+                    "Astuce: double-tape sur la mini-heatmap dans la page activité pour ouvrir cette vue.",
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

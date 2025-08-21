@@ -1,48 +1,42 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers.dart';               // dbProvider
-import '../services/stats_service.dart';  // StatsService
-import '../models/stats.dart';            // DailyStat, HourlyBucket
+import './providers.dart';
+import './services/stats_service.dart';
+import './models/stats.dart';
 
-/// Service de stats branché sur la DB.
+/// Service de stats branché sur le DB service
 final statsServiceProvider = Provider<StatsService>((ref) {
   final db = ref.watch(dbProvider);
   return StatsService(db);
 });
 
-/// ---------- Providers "minutes" ----------
+/// Minutes aujourd'hui
 final minutesTodayProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.watch(statsServiceProvider);
-  return s.minutesToday(activityId);
+FutureProvider.family<int, String>((ref, activityId) {
+  final svc = ref.watch(statsServiceProvider);
+  return svc.minutesToday(activityId);
 });
 
+/// Minutes semaine/mois/année courantes
 final minutesThisWeekProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.watch(statsServiceProvider);
-  return s.minutesThisWeek(activityId);
+FutureProvider.family<int, String>((ref, activityId) {
+  final svc = ref.watch(statsServiceProvider);
+  return svc.minutesThisWeek(activityId);
 });
 
 final minutesThisMonthProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.watch(statsServiceProvider);
-  return s.minutesThisMonth(activityId);
+FutureProvider.family<int, String>((ref, activityId) {
+  final svc = ref.watch(statsServiceProvider);
+  return svc.minutesThisMonth(activityId);
 });
 
 final minutesThisYearProvider =
-FutureProvider.family<int, String>((ref, activityId) async {
-  final s = ref.watch(statsServiceProvider);
-  return s.minutesThisYear(activityId);
+FutureProvider.family<int, String>((ref, activityId) {
+  final svc = ref.watch(statsServiceProvider);
+  return svc.minutesThisYear(activityId);
 });
 
-/// ---------- Providers "séries temporelles" ----------
-final hourlyTodayProvider =
-FutureProvider.family<List<HourlyBucket>, String>((ref, activityId) async {
-  final s = ref.watch(statsServiceProvider);
-  return s.hourlyToday(activityId);
-});
-
-/// Arguments typés pour N derniers jours (heatmap & mini-heatmap)
+/// Stats “N derniers jours”
 class LastNDaysArgs {
   final String activityId;
   final int n;
@@ -50,21 +44,14 @@ class LastNDaysArgs {
 }
 
 final lastNDaysProvider =
-FutureProvider.family<List<DailyStat>, LastNDaysArgs>((ref, args) async {
-  final s = ref.watch(statsServiceProvider);
-  // StatsService.lastNDays(String id, {required int n})
-  return s.lastNDays(args.activityId, n: args.n);
+FutureProvider.family<List<DailyStat>, LastNDaysArgs>((ref, args) {
+  final svc = ref.watch(statsServiceProvider);
+  return svc.lastNDays(args.activityId, n: args.n);
 });
 
-/// Raccourci pratique pour 7 jours
-final last7DaysProvider =
-FutureProvider.family<List<DailyStat>, String>((ref, activityId) async {
-  final s = ref.watch(statsServiceProvider);
-  return s.lastNDays(activityId, n: 7);
+/// Buckets horaires pour aujourd’hui (0..23)
+final hourlyTodayProvider =
+FutureProvider.family<List<HourlyBucket>, String>((ref, activityId) {
+  final svc = ref.watch(statsServiceProvider);
+  return svc.hourlyToday(activityId);
 });
-
-/// ---------- Alias (compatibilité)
-final statsTodayProvider  = minutesTodayProvider;
-final weekTotalProvider   = minutesThisWeekProvider;
-final monthTotalProvider  = minutesThisMonthProvider;
-final yearTotalProvider   = minutesThisYearProvider;

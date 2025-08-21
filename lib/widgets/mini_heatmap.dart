@@ -1,75 +1,57 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
-import '../providers_stats.dart';          // lastNDaysProvider, LastNDaysArgs
-import '../widgets/heatmap.dart';          // votre composant Heatmap(Map<DateTime,int> data, Color baseColor, {onDayTap})
-import '../pages/heatmap_page.dart';       // ActivityHeatmapPage(activityId:, n:)
+import '../models/stats.dart';
+import '../providers_stats.dart';
+import '../pages/heatmap_page.dart';
+import 'heatmap.dart';
 
-/// Mini heatmap pour 7 jours (ou n jours) :
-/// - Tape simple sur un carré  -> petit overlay d’infos (date + minutes)
-/// - Double-tape n'importe où  -> ouvre la heatmap détaillée (365 jours par défaut)
+/// Mini heatmap (tap = overlay, double-tap = page détaillée)
 class MiniHeatmap extends ConsumerWidget {
   final String activityId;
-  final int n;
-  final Color? baseColor;
+  final int days; // ex: 120 ou 180
 
   const MiniHeatmap({
     super.key,
     required this.activityId,
-    this.n = 7,
-    this.baseColor,
+    this.days = 120,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statsAsync = ref.watch(
-      lastNDaysProvider(LastNDaysArgs(activityId: activityId, n: n)),
-    );
+    final async = ref.watch(lastNDaysProvider(LastNDaysArgs(activityId: activityId, n: days)));
 
-    return statsAsync.when(
-      loading: () => const SizedBox(
-        height: 60,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      ),
-      error: (e, _) => SizedBox(
-        height: 60,
-        child: Center(child: Text('Erreur: $e')),
-      ),
-      data: (stats) {
-        // Convertit List<DailyStat> -> Map<DateTime, int> attendu par Heatmap
-        final data = <DateTime, int>{
-          for (final s in stats) s.day: s.minutes,
-        };
+    return async.when(
+      loading: () => const SizedBox(height: 80),
+      error: (e, _) => Text("Err heatmap: $e"),
+      data: (List<DailyStat> list) {
+        // Convertir en Map<DateTime,int>
+        final map = <DateTime, int>{};
+        for (final d in list) {
+          map[d.day] = d.minutes;
+        }
 
         return GestureDetector(
-          behavior: HitTestBehavior.opaque,
           onDoubleTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ActivityHeatmapPage(
-                  activityId: activityId,
-                  n: 365,
-                ),
-              ),
-            );
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ActivityHeatmapPage(activityId: activityId),
+            ));
           },
           child: Heatmap(
-            data: data,
-            baseColor: baseColor ?? Theme.of(context).colorScheme.primary,
+            data: map,
+            baseColor: Theme.of(context).colorScheme.primary,
             onDayTap: (day, minutes) {
-              // Petit overlay (dialog) avec la date + minutes
-              final locale = Localizations.localeOf(context).toString();
-              final df = DateFormat.yMMMMEEEEd(locale);
+              // Overlay d’info
+              final dateStr = "${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}";
               showDialog(
                 context: context,
                 builder: (_) => AlertDialog(
-                  title: const Text('Détail'),
-                  content: Text('${df.format(day)}\n$minutes min'),
+                  title: const Text("Détails"),
+                  content: Text("$dateStr • $minutes min"),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'),
+                      child: const Text("OK"),
                     ),
                   ],
                 ),
