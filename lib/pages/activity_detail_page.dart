@@ -3,14 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/activity.dart';
-import '../models/session.dart';
-
-import '../providers.dart';            // dbProvider
-import '../providers_stats.dart';     // minutesTodayProvider, minutesThisWeekProvider, hourlyTodayProvider, lastNDaysProvider...
+import '../providers.dart';              // dbProvider
+import '../providers_stats.dart';       // minutesTodayProvider, minutesThisWeekProvider, hourlyTodayProvider, lastNDaysProvider
 import '../widgets/activity_controls.dart';
 import '../widgets/activity_stats_panel.dart';
 import '../widgets/mini_heatmap.dart';
-import '../widgets/heatmap.dart';     // widget Heatmap (détaillée)
+import '../widgets/heatmap.dart';
 
 class ActivityDetailPage extends ConsumerStatefulWidget {
   final Activity activity;
@@ -27,22 +25,22 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   @override
   void initState() {
     super.initState();
-    // Tick visuel pour le badge (mm:ss) quand ça tourne.
+    // Badge mm:ss en temps réel quand ça tourne
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       final db = ref.read(dbProvider);
       if (db.isRunning(widget.activity.id) && mounted) setState(() {});
     });
 
-    // Écoute manuelle: quand le DB bouge -> on invalide les stats et on rebuild.
+    // Invalidation des providers de stats quand le DB bouge
     _cancelDbListen = ref.listenManual(
       dbProvider,
           (prev, next) {
         final id = widget.activity.id;
         ref.invalidate(minutesTodayProvider(id));
-        ref.invalidate(hourlyTodayProvider(id));
         ref.invalidate(minutesThisWeekProvider(id));
         ref.invalidate(minutesThisMonthProvider(id));
         ref.invalidate(minutesThisYearProvider(id));
+        ref.invalidate(hourlyTodayProvider(id));
         ref.invalidate(lastNDaysProvider(LastNDaysArgs(activityId: id, n: 7)));
         if (mounted) setState(() {});
       },
@@ -77,11 +75,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
             Text(a.emoji, style: const TextStyle(fontSize: 22)),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                a.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             if (running)
               Container(
@@ -89,10 +83,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                 decoration: BoxDecoration(
                   color: (paused ? Colors.orange : Colors.green).withValues(alpha: .12),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: paused ? Colors.orange : Colors.green,
-                    width: 1,
-                  ),
+                  border: Border.all(color: paused ? Colors.orange : Colors.green),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(paused ? Icons.pause : Icons.timer_outlined, size: 14),
@@ -106,7 +97,7 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          // Objectif du jour (si défini)
+          // Objectif du jour
           todayAsync.when(
             loading: () => const SizedBox.shrink(),
             error: (_, __) => const SizedBox.shrink(),
@@ -131,17 +122,15 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
             },
           ),
 
-          // Contrôles (Start/Pause/Stop responsives)
-          Card(
-            child: ActivityControls(activityId: a.id),
-          ),
+          // Contrôles
+          Card(child: ActivityControls(activityId: a.id)),
           const SizedBox(height: 12),
 
-          // Historique (sessions entre contrôles et graphs)
+          // Historique entre contrôles et graphs
           _buildHistory(context, db, a.id),
           const SizedBox(height: 12),
 
-          // Stats + mini heatmap (7 derniers jours)
+          // Stats + mini heatmap
           Card(
             clipBehavior: Clip.antiAlias,
             child: Padding(
@@ -149,10 +138,12 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // En-tête « 7 derniers jours » + mini heatmap cliquable
                   Row(
                     children: [
-                      const Text("7 derniers jours", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      const Text(
+                        "7 derniers jours",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
                       const Spacer(),
                       MiniHeatmap(
                         activityId: a.id,
@@ -163,17 +154,15 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
                       IconButton(
                         tooltip: "Heatmap détaillée",
                         onPressed: () {
-                          Navigator.of(context).push(MaterialPageRoute(
-                            builder: (_) => HeatmapPage(activity: a),
-                          ));
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => HeatmapPage(activity: a)),
+                          );
                         },
                         icon: const Icon(Icons.grid_view),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-
-                  // Panneau avec Today/Week/Month/Year + courbes
                   ActivityStatsPanel(activityId: a.id),
                 ],
               ),
@@ -184,9 +173,14 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
     );
   }
 
-  /// Historique de sessions pour l’activité [activityId].
+  /// =======================
+  /// Historique des sessions
+  /// =======================
   Widget _buildHistory(BuildContext context, dynamic db, String activityId) {
-    final List<Session> sessions = db.listSessionsByActivity(activityId);
+    // On ne suppose plus le type exact (Session vs DbSession)
+    final raw = (db.listSessionsByActivity(activityId) as List);
+    final sessions = raw.map((e) => _Sess.from(e)).toList();
+
     if (sessions.isEmpty) {
       return Card(
         child: Padding(
@@ -199,9 +193,8 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
       );
     }
 
-    // Plus récent -> plus ancien
-    final ordered = sessions.toList()
-      ..sort((a, b) => (b.startAt ?? DateTime(1970)).compareTo(a.startAt ?? DateTime(1970)));
+    sessions.sort((a, b) => (b.startAt ?? DateTime(1970))
+        .compareTo(a.startAt ?? DateTime(1970)));
 
     return Card(
       child: Padding(
@@ -211,21 +204,29 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
           children: [
             const Text("Historique", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            ...ordered.map((s) {
+            ...sessions.map((s) {
               final start = s.startAt;
               final end   = s.endAt;
+
               final title = start != null
                   ? "${start.year}-${start.month.toString().padLeft(2,'0')}-${start.day.toString().padLeft(2,'0')}  "
                   "${start.hour.toString().padLeft(2,'0')}:${start.minute.toString().padLeft(2,'0')}"
                   : "(début inconnu)";
 
-              final pauses = db.listPausesBySession(activityId, s.id);
-              final totalPaused = pauses.fold<Duration>(Duration.zero, (acc, p) {
-                final ps = p.startAt;
-                final pe = p.endAt ?? DateTime.now();
-                if (ps == null) return acc;
-                return acc + pe.difference(ps);
-              });
+              final pauses = db.listPausesBySession(activityId, s.id) as List;
+              final totalPaused = pauses.fold<Duration>(
+                Duration.zero,
+                    (acc, p) {
+                  try {
+                    final ps = p.startAt as DateTime?;
+                    final pe = (p.endAt as DateTime?) ?? DateTime.now();
+                    if (ps == null) return acc;
+                    return acc + pe.difference(ps);
+                  } catch (_) {
+                    return acc;
+                  }
+                },
+              );
 
               Duration effective;
               if (start == null) {
@@ -262,15 +263,47 @@ class _ActivityDetailPageState extends ConsumerState<ActivityDetailPage> {
   }
 }
 
-/// Page heatmap détaillée (ex. 90 jours)
+/// Petit adaptateur local pour uniformiser Session/DbSession
+class _Sess {
+  final String id;
+  final DateTime? startAt;
+  final DateTime? endAt;
+
+  _Sess({required this.id, this.startAt, this.endAt});
+
+  factory _Sess.from(dynamic s) {
+    try {
+      // Classes avec champs .id, .startAt, .endAt
+      return _Sess(
+        id: s.id as String,
+        startAt: s.startAt as DateTime?,
+        endAt: s.endAt as DateTime?,
+      );
+    } catch (_) {
+      if (s is Map) {
+        return _Sess(
+          id: (s['id'] ?? '').toString(),
+          startAt: s['startAt'] as DateTime?,
+          endAt: s['endAt'] as DateTime?,
+        );
+      }
+      // Fallback très permissif
+      return _Sess(id: (s?.id ?? '').toString(), startAt: null, endAt: null);
+    }
+  }
+}
+
+/// Heatmap détaillée
 class HeatmapPage extends ConsumerWidget {
   final Activity activity;
   const HeatmapPage({super.key, required this.activity});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final base   = activity.color;
-    final stats  = ref.watch(lastNDaysProvider(LastNDaysArgs(activityId: activity.id, n: 90)));
+    final base  = activity.color;
+    final stats = ref.watch(
+      lastNDaysProvider(LastNDaysArgs(activityId: activity.id, n: 90)),
+    );
 
     return Scaffold(
       appBar: AppBar(title: Text("${activity.emoji} ${activity.name} — Heatmap")),
@@ -278,8 +311,7 @@ class HeatmapPage extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text("Erreur: $e")),
         data: (days) {
-          // Map<DateTime,int> pour le widget Heatmap
-          final map = <DateTime, int>{ for (final d in days) d.date : d.minutes };
+          final map = <DateTime, int>{for (final d in days) d.date: d.minutes};
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
