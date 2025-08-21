@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers.dart';
 
 class CreateActivityPage extends ConsumerStatefulWidget {
@@ -10,319 +11,205 @@ class CreateActivityPage extends ConsumerStatefulWidget {
 }
 
 class _CreateActivityPageState extends ConsumerState<CreateActivityPage> {
-  final _formKey = GlobalKey<FormState>();
+  final _form = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _dailyCtrl = TextEditingController();
-  final _weeklyCtrl = TextEditingController();
-  final _monthlyCtrl = TextEditingController();
-  final _yearlyCtrl = TextEditingController();
+  final _emojiCtrl = TextEditingController(text: '⏱️');
+  Color _color = const Color(0xFF00BCD4); // teal-ish
 
-  // Valeurs par défaut
-  String _emoji = '📚';
-  Color _color = Colors.blue;
-
-  // Emojis courants (ligne rapide)
-  final List<String> _quickEmojis = const [
-    '📚','🏃','🧘','🎹','🧠','📝','🧹','💻','☕','🎮','📖','🚴','🏋️','🎨','🎧','🛏️'
-  ];
-
-  // Emojis étendus (grille du bottom sheet)
-  final List<String> _moreEmojis = const [
-    '📚','📖','📝','🧠','💡','🎹','🎸','🥁','🎻','🎨','🧵','🪡','🧩','♟️',
-    '🏃','🚴','🏊','🏋️','🤸','🧗','⛹️','🤾','🧘','⚽','🏀','🎾','🏐','⚾',
-    '💻','🖥️','⌨️','🖱️','🧪','🔬','🔭','📊','📈','📉',
-    '☕','🍵','🍎','🥕','🥗','🍳',
-    '🛏️','🧹','🧺','🧼',
-    '📅','⏰','🧭','📌',
-    '🌱','🌳','🌿','🌸',
-    '🎧','🎮','🎲','📷'
-  ];
-
-  // Couleurs rapides
-  final List<Color> _quickColors = const [
-    Colors.blue, Colors.green, Colors.orange, Colors.red,
-    Colors.purple, Colors.teal, Colors.pink, Colors.indigo,
-  ];
+  int _daily = 0, _weekly = 0, _monthly = 0, _yearly = 0;
+  bool _saving = false;
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _dailyCtrl.dispose();
-    _weeklyCtrl.dispose();
-    _monthlyCtrl.dispose();
-    _yearlyCtrl.dispose();
+    _emojiCtrl.dispose();
     super.dispose();
   }
 
-  int? _toIntOrNull(String s) {
-    final t = s.trim();
-    if (t.isEmpty) return null;
-    final v = int.tryParse(t);
-    return v == null || v < 0 ? null : v;
-  }
-
-  Future<void> _pickEmojiBottomSheet() async {
-    String temp = _emoji;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        final tc = TextEditingController(text: temp);
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16, right: 16,
-            top: 8,
-            bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Saisir/coller n'importe quel emoji
-              TextField(
-                controller: tc,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 28),
-                decoration: const InputDecoration(
-                  labelText: 'Saisir un emoji',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (v) {
-                  if (v.runes.isEmpty) return;
-                  temp = String.fromCharCode(v.runes.first);
-                },
-              ),
-              const SizedBox(height: 12),
-              // Grille d’emojis
-              SizedBox(
-                height: 280,
-                child: GridView.builder(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 8,
-                    crossAxisSpacing: 6,
-                    mainAxisSpacing: 6,
-                  ),
-                  itemCount: _moreEmojis.length,
-                  itemBuilder: (_, i) {
-                    final e = _moreEmojis[i];
-                    final sel = e == temp;
-                    return InkWell(
-                      onTap: () {
-                        temp = e;
-                        Navigator.of(ctx).pop();
-                      },
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: sel
-                              ? Border.all(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          )
-                              : null,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceVariant
-                              .withOpacity(0.3),
-                        ),
-                        child: Text(e, style: const TextStyle(fontSize: 22)),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    setState(() => _emoji = temp);
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() => _saving = true);
+    final db = ref.read(dbProvider);
+    try {
+      await db.createActivity(
+        name: _nameCtrl.text.trim(),
+        emoji: _emojiCtrl.text.trim().isEmpty ? '⏱️' : _emojiCtrl.text.trim(),
+        colorValue: _color.value,
+        dailyGoalMinutes: _daily,
+        weeklyGoalMinutes: _weekly,
+        monthlyGoalMinutes: _monthly,
+        yearlyGoalMinutes: _yearly,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final db = ref.watch(dbProvider);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Nouvelle activité')),
+      appBar: AppBar(title: const Text('Créer une activité')),
       body: Form(
-        key: _formKey,
+        key: _form,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
-            // Emoji + Nom
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Emoji pick rapide
-                Column(
-                  children: [
-                    InkWell(
-                      onTap: _pickEmojiBottomSheet,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        width: 56, height: 56,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child:
-                        Text(_emoji, style: const TextStyle(fontSize: 28)),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _pickEmojiBottomSheet,
-                      child: const Text('Plus d\'emojis…'),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 16),
                 Expanded(
                   child: TextFormField(
                     controller: _nameCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Nom',
-                      border: OutlineInputBorder(),
+                      hintText: 'ex. Yoga, Lecture…',
                     ),
-                    validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Nom requis' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Nom requis' : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 64,
+                  child: TextFormField(
+                    controller: _emojiCtrl,
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(labelText: 'Emoji'),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-
-            // Ligne de chips emojis rapides
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _quickEmojis.map((e) {
-                final sel = e == _emoji;
-                return ChoiceChip(
-                  label: Text(e, style: const TextStyle(fontSize: 18)),
-                  selected: sel,
-                  onSelected: (_) => setState(() => _emoji = e),
-                );
-              }).toList(),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Couleurs rapides
-            Text('Couleur', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: _quickColors.map((c) {
-                final sel = c.value == _color.value;
-                return InkWell(
-                  onTap: () => setState(() => _color = c),
-                  borderRadius: BorderRadius.circular(999),
+            Row(
+              children: [
+                const Text('Couleur :'),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () async {
+                    final c = await showDialog<Color>(
+                      context: context,
+                      builder: (ctx) => _ColorPickerDialog(color: _color),
+                    );
+                    if (c != null) setState(() => _color = c);
+                  },
                   child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: c,
-                      shape: BoxShape.circle,
-                      border: sel
-                          ? Border.all(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onPrimaryContainer,
-                        width: 2,
-                      )
-                          : null,
-                    ),
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(color: _color, borderRadius: BorderRadius.circular(6)),
                   ),
-                );
-              }).toList(),
+                ),
+              ],
             ),
-
+            const SizedBox(height: 16),
+            Text('Objectifs (min)', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            _GoalRow(label: 'Jour', onChanged: (v) => _daily = v),
+            _GoalRow(label: 'Semaine', onChanged: (v) => _weekly = v),
+            _GoalRow(label: 'Mois', onChanged: (v) => _monthly = v),
+            _GoalRow(label: 'Année', onChanged: (v) => _yearly = v),
             const SizedBox(height: 20),
-            Text('Objectifs (minutes)',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _dailyCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Jour',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _weeklyCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Semaine',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _monthlyCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Mois',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _yearlyCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Ann\u00E9e',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
             FilledButton.icon(
-              icon: const Icon(Icons.check),
-              label: const Text('Cr\u00E9er'),
-              onPressed: () async {
-                if (!_formKey.currentState!.validate()) return;
-
-                // Appel corrigé : paramètres nommés attendus par DatabaseService.createActivity(...)
-                await db.createActivity(
-                  name: _nameCtrl.text.trim(),
-                  emoji: _emoji,
-                  color: _color,
-                  dailyGoalMinutes: _toIntOrNull(_dailyCtrl.text),
-                  weeklyGoalMinutes: _toIntOrNull(_weeklyCtrl.text),
-                  monthlyGoalMinutes: _toIntOrNull(_monthlyCtrl.text),
-                  yearlyGoalMinutes: _toIntOrNull(_yearlyCtrl.text),
-                );
-
-                if (mounted) Navigator.of(context).pop();
-              },
+              onPressed: _saving ? null : _save,
+              icon: const Icon(Icons.check_rounded),
+              label: Text(_saving ? 'Enregistrement…' : 'Créer'),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _GoalRow extends StatefulWidget {
+  final String label;
+  final void Function(int) onChanged;
+  const _GoalRow({required this.label, required this.onChanged});
+
+  @override
+  State<_GoalRow> createState() => _GoalRowState();
+}
+
+class _GoalRowState extends State<_GoalRow> {
+  final ctrl = TextEditingController(text: '0');
+  @override
+  void dispose() { ctrl.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(width: 80, child: Text(widget.label)),
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: '0',
+                suffixText: 'min',
+              ),
+              onChanged: (v) {
+                final n = int.tryParse(v) ?? 0;
+                widget.onChanged(n);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColorPickerDialog extends StatefulWidget {
+  final Color color;
+  const _ColorPickerDialog({required this.color});
+
+  @override
+  State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
+}
+
+class _ColorPickerDialogState extends State<_ColorPickerDialog> {
+  late Color _c;
+  @override
+  void initState() { super.initState(); _c = widget.color; }
+
+  static const palette = <Color>[
+    Color(0xFFE91E63), Color(0xFFF44336), Color(0xFFFF9800), Color(0xFFFFC107),
+    Color(0xFF4CAF50), Color(0xFF00BCD4), Color(0xFF2196F3), Color(0xFF3F51B5),
+    Color(0xFF9C27B0), Color(0xFF795548), Color(0xFF607D8B), Color(0xFF009688),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Choisir une couleur'),
+      content: SizedBox(
+        width: 280,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final c in palette)
+              GestureDetector(
+                onTap: () => setState(() => _c = c),
+                child: Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: c,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: _c == c ? const Icon(Icons.check, color: Colors.white) : null,
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+        FilledButton(onPressed: () => Navigator.pop(context, _c), child: const Text('OK')),
+      ],
     );
   }
 }
