@@ -1,4 +1,4 @@
-import 'package:fl_chart/fl_chart.dart';
+﻿import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -29,7 +29,7 @@ class WeeklyBarsChart extends StatelessWidget {
               getTitlesWidget: (val, meta) {
                 final i = val.toInt();
                 if (i < 0 || i >= stats.length) return const SizedBox.shrink();
-                final label = df.format(stats[i].day);
+                final label = df.format(stats[i].date);
                 return Text(label, style: const TextStyle(fontSize: 10));
               },
             ),

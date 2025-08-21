@@ -28,7 +28,7 @@ class MiniHeatmap extends ConsumerWidget {
         // Convertir en Map<DateTime,int>
         final map = <DateTime, int>{};
         for (final d in list) {
-          map[d.day] = d.minutes;
+          map[d.date] = d.minutes;
         }
 
         return GestureDetector(

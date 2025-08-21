@@ -26,7 +26,7 @@ class ActivityHeatmapPage extends ConsumerWidget {
           data: (List<DailyStat> data) {
             final map = <DateTime, int>{};
             for (final d in data) {
-              map[d.day] = d.minutes;
+              map[d.date] = d.minutes;
             }
             return SingleChildScrollView(
               child: Column(

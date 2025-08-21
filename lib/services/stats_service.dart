@@ -122,7 +122,7 @@ class StatsService {
     final List<DailyStat> out = [];
     DateTime d = start;
     while (!d.isAfter(today)) {
-      out.add(DailyStat(day: DateTime(d.year, d.month, d.day), minutes: _minutesForDay(activityId, d)));
+      out.add(DailyStat(date: DateTime(d.year, d.month, d.day), minutes: _minutesForDay(activityId, d)));
       d = d.add(const Duration(days: 1));
     }
     return out;
