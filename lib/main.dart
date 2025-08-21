@@ -20,31 +20,21 @@ class HabitsApp extends ConsumerWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.indigo,
-        brightness: Brightness.light,
       ),
-
-      // Localisation : FR + EN (matériel, widgets et Cupertino)
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('en'),
-        Locale('fr'),
-      ],
-
+      supportedLocales: const [Locale('en'), Locale('fr')],
       home: const ActivitiesListPage(),
     );
   }
 }
 
-/// Compatibilité avec d’anciens tests qui pompaient `MyApp`.
+/// Compat test legacy
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
-  Widget build(BuildContext context) {
-    return const ProviderScope(child: HabitsApp());
-  }
+  Widget build(BuildContext context) => const ProviderScope(child: HabitsApp());
 }

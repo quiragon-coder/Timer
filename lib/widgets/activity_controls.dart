@@ -1,19 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
-import '../providers_settings.dart';
 
 class ActivityControls extends ConsumerStatefulWidget {
-  const ActivityControls({
-    super.key,
-    required this.activityId,
-    this.compact = false,
-  });
-
   final String activityId;
   final bool compact;
+  const ActivityControls({super.key, required this.activityId, this.compact = false});
 
   @override
   ConsumerState<ActivityControls> createState() => _ActivityControlsState();
@@ -22,49 +15,21 @@ class ActivityControls extends ConsumerStatefulWidget {
 class _ActivityControlsState extends ConsumerState<ActivityControls> {
   Future<void> _start() async {
     final db = ref.read(dbProvider);
-    final settings = ref.read(settingsProvider);
-    await db.start(widget.activityId);
-    if (settings.hapticsOnControls) {
-      HapticFeedback.mediumImpact();
-    }
+    await db.start(widget.activityId);     // <- wrappers normalisés
     if (mounted) setState(() {});
   }
 
   Future<void> _togglePause() async {
     final db = ref.read(dbProvider);
-    final settings = ref.read(settingsProvider);
     if (!db.isRunning(widget.activityId)) return;
     await db.togglePause(widget.activityId);
-    if (settings.hapticsOnControls) {
-      HapticFeedback.selectionClick();
-    }
     if (mounted) setState(() {});
   }
 
   Future<void> _stop() async {
     final db = ref.read(dbProvider);
-    final settings = ref.read(settingsProvider);
     if (!db.isRunning(widget.activityId)) return;
-
-    if (settings.confirmStop) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Arrêter la session ?'),
-          content: const Text('La session en cours sera arrêtée.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-            FilledButton.tonal(onPressed: () => Navigator.pop(context, true), child: const Text('Arrêter')),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
-
     await db.stop(widget.activityId);
-    if (settings.hapticsOnControls) {
-      HapticFeedback.heavyImpact();
-    }
     if (mounted) setState(() {});
   }
 
@@ -72,46 +37,54 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
     final running = db.isRunning(widget.activityId);
-    final paused = db.isPaused(widget.activityId);
+    final paused  = db.isPaused(widget.activityId);
 
-    final ButtonStyle filled = FilledButton.styleFrom();
-    final ButtonStyle tonal = FilledButton.tonalStyleFrom();
-    final ButtonStyle outlined = OutlinedButton.styleFrom();
+    final children = <Widget>[
+      // START
+      FilledButton.icon(
+        onPressed: running ? null : _start,
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('Démarrer'),
+      ),
 
-    final pad = widget.compact ? const EdgeInsets.symmetric(horizontal: 8) : null;
+      // PAUSE / REPRENDRE (visible seulement si en cours)
+      if (running)
+        FilledButton.tonalIcon(
+          onPressed: _togglePause,
+          icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+          label: Text(paused ? 'Reprendre' : 'Mettre en pause'),
+        ),
 
-    if (!running) {
-      // DÉMARRER
-      return FilledButton(
-        style: filled,
-        onPressed: _start,
-        child: const Text('Démarrer'),
+      // STOP (visible seulement si en cours)
+      if (running)
+        FilledButton.icon(
+          onPressed: _stop,
+          icon: const Icon(Icons.stop),
+          label: const Text('Stop'),
+          style: ButtonStyle(
+            backgroundColor: MaterialStateProperty.resolveWith((states) {
+              return Theme.of(context).colorScheme.errorContainer;
+            }),
+            foregroundColor: MaterialStateProperty.resolveWith((states) {
+              return Theme.of(context).colorScheme.onErrorContainer;
+            }),
+          ),
+        ),
+    ];
+
+    if (widget.compact) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: children,
       );
     }
 
-    // EN COURS
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        if (!paused)
-          FilledButton.tonal(
-            style: tonal,
-            onPressed: _togglePause,
-            child: const Text('Mettre en pause'),
-          )
-        else
-          FilledButton(
-            style: filled,
-            onPressed: _togglePause,
-            child: const Text('Reprendre'),
-          ),
-        OutlinedButton(
-          style: outlined.copyWith(padding: pad),
-          onPressed: _stop,
-          child: const Text('Arrêter'),
-        ),
-      ],
+    return OverflowBar(
+      alignment: MainAxisAlignment.start,
+      spacing: 12,
+      overflowSpacing: 8,
+      children: children,
     );
   }
 }
