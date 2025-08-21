@@ -1,48 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 
-part 'activity.g.dart';
-
-@collection
 class Activity {
-  /// Id interne Isar
-  Id isarId = Isar.autoIncrement;
+  final String id;
+  final String name;
+  final String emoji;
+  final Color color;
 
-  /// Id logique String (utilisé partout dans l’UI/services)
-  @Index(unique: true, replace: true)
-  late String id;
+  /// Objectifs (minutes). Tous optionnels.
+  final int? dailyGoalMinutes;
+  final int? weeklyGoalMinutes;
+  final int? monthlyGoalMinutes;
+  final int? yearlyGoalMinutes;
 
-  late String name;
-  String emoji = '⏱️';
-
-  /// Couleur stockée comme entier ARGB
-  @Index()
-  late int colorValue;
-
-  /// Objectifs en minutes (on conserve les mêmes noms que ton UI)
-  int dailyGoalMinutes = 0;
-  int weeklyGoalMinutes = 0;
-  int monthlyGoalMinutes = 0;
-  int yearlyGoalMinutes = 0;
-
-  Activity({
+  const Activity({
     required this.id,
     required this.name,
-    this.emoji = '⏱️',
-    required Color color,
-    this.dailyGoalMinutes = 0,
-    this.weeklyGoalMinutes = 0,
-    this.monthlyGoalMinutes = 0,
-    this.yearlyGoalMinutes = 0,
-  }) : colorValue = color.value;
-
-  /// ----- Helpers non persistés -----
-
-  @ignore
-  Color get color => Color(colorValue);
-
-  @ignore
-  set color(Color c) => colorValue = c.value;
+    required this.emoji,
+    required this.color,
+    this.dailyGoalMinutes,
+    this.weeklyGoalMinutes,
+    this.monthlyGoalMinutes,
+    this.yearlyGoalMinutes,
+  });
 
   Activity copyWith({
     String? id,
@@ -63,6 +42,30 @@ class Activity {
       weeklyGoalMinutes: weeklyGoalMinutes ?? this.weeklyGoalMinutes,
       monthlyGoalMinutes: monthlyGoalMinutes ?? this.monthlyGoalMinutes,
       yearlyGoalMinutes: yearlyGoalMinutes ?? this.yearlyGoalMinutes,
-    )..isarId = isarId;
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'emoji': emoji,
+    'color': color.value,
+    'dailyGoalMinutes': dailyGoalMinutes,
+    'weeklyGoalMinutes': weeklyGoalMinutes,
+    'monthlyGoalMinutes': monthlyGoalMinutes,
+    'yearlyGoalMinutes': yearlyGoalMinutes,
+  };
+
+  factory Activity.fromJson(Map<String, dynamic> json) {
+    return Activity(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      emoji: json['emoji'] as String,
+      color: Color((json['color'] as int?) ?? 0xFF6C63FF),
+      dailyGoalMinutes: json['dailyGoalMinutes'] as int?,
+      weeklyGoalMinutes: json['weeklyGoalMinutes'] as int?,
+      monthlyGoalMinutes: json['monthlyGoalMinutes'] as int?,
+      yearlyGoalMinutes: json['yearlyGoalMinutes'] as int?,
+    );
   }
 }

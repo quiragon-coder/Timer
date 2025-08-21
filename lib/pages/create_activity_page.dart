@@ -14,9 +14,9 @@ class _CreateActivityPageState extends ConsumerState<CreateActivityPage> {
   final _form = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emojiCtrl = TextEditingController(text: '⏱️');
-  Color _color = const Color(0xFF00BCD4); // teal-ish
+  Color _color = const Color(0xFF00BCD4);
 
-  int _daily = 0, _weekly = 0, _monthly = 0, _yearly = 0;
+  int? _daily, _weekly, _monthly, _yearly;
   bool _saving = false;
 
   @override
@@ -30,21 +30,19 @@ class _CreateActivityPageState extends ConsumerState<CreateActivityPage> {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
     final db = ref.read(dbProvider);
-    try {
-      await db.createActivity(
-        name: _nameCtrl.text.trim(),
-        emoji: _emojiCtrl.text.trim().isEmpty ? '⏱️' : _emojiCtrl.text.trim(),
-        colorValue: _color.value,
-        dailyGoalMinutes: _daily,
-        weeklyGoalMinutes: _weekly,
-        monthlyGoalMinutes: _monthly,
-        yearlyGoalMinutes: _yearly,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+
+    await db.createActivity(
+      name: _nameCtrl.text.trim(),
+      emoji: _emojiCtrl.text.trim().isEmpty ? '⏱️' : _emojiCtrl.text.trim(),
+      color: _color,
+      dailyGoalMinutes: _daily,
+      weeklyGoalMinutes: _weekly,
+      monthlyGoalMinutes: _monthly,
+      yearlyGoalMinutes: _yearly,
+    );
+
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -93,8 +91,7 @@ class _CreateActivityPageState extends ConsumerState<CreateActivityPage> {
                     if (c != null) setState(() => _color = c);
                   },
                   child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 28, height: 28,
                     decoration: BoxDecoration(color: _color, borderRadius: BorderRadius.circular(6)),
                   ),
                 ),
@@ -122,7 +119,7 @@ class _CreateActivityPageState extends ConsumerState<CreateActivityPage> {
 
 class _GoalRow extends StatefulWidget {
   final String label;
-  final void Function(int) onChanged;
+  final void Function(int?) onChanged;
   const _GoalRow({required this.label, required this.onChanged});
 
   @override
@@ -130,9 +127,10 @@ class _GoalRow extends StatefulWidget {
 }
 
 class _GoalRowState extends State<_GoalRow> {
-  final ctrl = TextEditingController(text: '0');
+  final ctrl = TextEditingController();
   @override
   void dispose() { ctrl.dispose(); super.dispose(); }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -144,15 +142,8 @@ class _GoalRowState extends State<_GoalRow> {
             child: TextField(
               controller: ctrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                isDense: true,
-                hintText: '0',
-                suffixText: 'min',
-              ),
-              onChanged: (v) {
-                final n = int.tryParse(v) ?? 0;
-                widget.onChanged(n);
-              },
+              decoration: const InputDecoration(isDense: true, hintText: '0', suffixText: 'min'),
+              onChanged: (v) => widget.onChanged(int.tryParse(v)),
             ),
           ),
         ],
@@ -187,8 +178,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       content: SizedBox(
         width: 280,
         child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 8, runSpacing: 8,
           children: [
             for (final c in palette)
               GestureDetector(

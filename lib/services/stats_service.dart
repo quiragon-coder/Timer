@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'dart:math';
+import '../models/stats.dart';
 import '../models/session.dart';
 import '../models/pause.dart';
 import 'database_service.dart';
@@ -7,109 +8,125 @@ class StatsService {
   final DatabaseService db;
   StatsService(this.db);
 
-  // ---------- Minutes agrégées ----------
-  int minutesOnDay(String activityId, DateTime day) {
-    return db.effectiveMinutesOnDay(activityId, DateUtils.dateOnly(day));
-  }
+  // bornes utiles
+  DateTime _d0(DateTime d) => DateTime(d.year, d.month, d.day);
+  DateTime _d1(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
 
-  int minutesToday(String activityId) => minutesOnDay(activityId, DateTime.now());
+  DateTime _weekStart(DateTime d) => _d0(d).subtract(Duration(days: d.weekday - 1));
+  DateTime _monthStart(DateTime d) => DateTime(d.year, d.month, 1);
+  DateTime _yearStart(DateTime d) => DateTime(d.year, 1, 1);
 
-  int minutesThisWeek(String activityId) {
+  Future<int> minutesToday(String activityId) async {
     final now = DateTime.now();
-    final monday = now.subtract(Duration(days: now.weekday - 1));
-    var total = 0;
-    for (int i = 0; i < 7; i++) {
-      total += minutesOnDay(activityId, monday.add(Duration(days: i)));
-    }
-    return total;
+    return _minutesRange(activityId, _d0(now), _d1(now));
   }
 
-  int minutesThisMonth(String activityId) {
+  Future<int> minutesThisWeek(String activityId) async {
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final next = (now.month == 12) ? DateTime(now.year + 1, 1, 1) : DateTime(now.year, now.month + 1, 1);
-    var total = 0;
-    for (DateTime d = start; d.isBefore(next); d = d.add(const Duration(days: 1))) {
-      total += minutesOnDay(activityId, d);
-    }
-    return total;
+    final from = _weekStart(now);
+    return _minutesRange(activityId, _d0(from), _d1(now));
   }
 
-  int minutesThisYear(String activityId) {
+  Future<int> minutesThisMonth(String activityId) async {
     final now = DateTime.now();
-    final start = DateTime(now.year, 1, 1);
-    final next = DateTime(now.year + 1, 1, 1);
-    var total = 0;
-    for (DateTime d = start; d.isBefore(next); d = d.add(const Duration(days: 1))) {
-      total += minutesOnDay(activityId, d);
-    }
-    return total;
+    final from = _monthStart(now);
+    return _minutesRange(activityId, _d0(from), _d1(now));
   }
 
-  /// 7 derniers jours (du plus ancien au plus récent)
-  List<_Daily> lastNDays(String activityId, int n) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final start = today.subtract(Duration(days: n - 1));
-    final out = <_Daily>[];
+  Future<int> minutesThisYear(String activityId) async {
+    final now = DateTime.now();
+    final from = _yearStart(now);
+    return _minutesRange(activityId, _d0(from), _d1(now));
+  }
+
+  Future<List<DailyStat>> lastNDays(String activityId, {required int n}) async {
+    final today = _d0(DateTime.now());
+    final from = today.subtract(Duration(days: n - 1));
+    final out = <DailyStat>[];
     for (int i = 0; i < n; i++) {
-      final day = DateUtils.dateOnly(start.add(Duration(days: i)));
-      out.add(_Daily(day, minutesOnDay(activityId, day)));
+      final day = from.add(Duration(days: i));
+      final m = await _minutesRange(activityId, _d0(day), _d1(day));
+      out.add(DailyStat(date: day, minutes: m));
     }
     return out;
   }
 
-  // ---------- Buckets horaires (aujourd’hui) ----------
-  /// Renvoie un tableau de 24 cases (minutes par heure aujourd’hui).
-  List<int> hourlyToday(String activityId) {
-    final List<int> buckets = List<int>.filled(24, 0);
-    final today = DateUtils.dateOnly(DateTime.now());
-    final endOfDay = today.add(const Duration(days: 1));
+  Future<List<HourlyBucket>> hourlyToday(String activityId) async {
+    final today = _d0(DateTime.now());
+    final tomorrow = today.add(const Duration(days: 1));
 
-    // Sessions recoupant aujourd’hui
-    final sessions = db.listSessionsByActivityModel(activityId).where((s) {
+    final sessions = db.listSessionsByActivity(activityId).where((s) {
       final end = s.endAt ?? DateTime.now();
-      return s.startAt.isBefore(endOfDay) && end.isAfter(today);
+      return s.startAt.isBefore(tomorrow) && end.isAfter(today);
     });
 
+    final buckets = List<int>.filled(24, 0);
     for (final s in sessions) {
-      final start = s.startAt.isAfter(today) ? s.startAt : today;
-      final end = (s.endAt ?? DateTime.now()).isBefore(endOfDay) ? (s.endAt ?? DateTime.now()) : endOfDay;
+      final sFrom = s.startAt.isAfter(today) ? s.startAt : today;
+      final sTo = (s.endAt ?? DateTime.now()).isBefore(tomorrow) ? (s.endAt ?? DateTime.now()) : tomorrow;
 
-      final pauses = db.listPausesBySessionModel(activityId, s.id);
-      _accumulateBuckets(buckets, start, end, pauses);
+      final pauses = db.listPausesBySession(s.id);
+      _accumulateByHour(buckets, sFrom, sTo, pauses);
     }
 
-    return buckets;
+    return List.generate(24, (h) => HourlyBucket(hour: h, minutes: buckets[h]));
   }
 
-  // ---------- Helpers ----------
-  void _accumulateBuckets(List<int> buckets, DateTime start, DateTime end, List<Pause> pauses) {
-    if (!end.isAfter(start)) return;
+  Future<Map<DateTime, int>> dailyMinutesRange({
+    required String activityId,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final map = <DateTime, int>{};
+    var d = _d0(from);
+    final end = _d1(to);
+    while (!d.isAfter(end)) {
+      map[_d0(d)] = await _minutesRange(activityId, _d0(d), _d1(d));
+      d = d.add(const Duration(days: 1));
+    }
+    return map;
+  }
 
-    // On parcours heure par heure dans l’intervalle
-    DateTime cursor = start;
-    while (cursor.isBefore(end)) {
+  // ---- helpers ----
+  Future<int> _minutesRange(String activityId, DateTime from, DateTime to) async {
+    int minutes = 0;
+
+    final sessions = db.listSessionsByActivity(activityId);
+    for (final s in sessions) {
+      final end = s.endAt ?? DateTime.now();
+      if (end.isBefore(from) || s.startAt.isAfter(to)) continue;
+
+      final start = s.startAt.isBefore(from) ? from : s.startAt;
+      final finish = end.isAfter(to) ? to : end;
+
+      int sec = finish.difference(start).inSeconds;
+
+      final pauses = db.listPausesBySession(s.id);
+      for (final p in pauses) {
+        final pEnd = p.endAt ?? finish;
+        sec -= _overlapSec(start, finish, p.startAt, pEnd);
+      }
+      if (sec > 0) minutes += sec ~/ 60;
+    }
+
+    return max(0, minutes);
+  }
+
+  void _accumulateByHour(List<int> buckets, DateTime from, DateTime to, List<Pause> pauses) {
+    DateTime cursor = from;
+    while (cursor.isBefore(to)) {
       final hourEnd = DateTime(cursor.year, cursor.month, cursor.day, cursor.hour).add(const Duration(hours: 1));
-      final sliceEnd = hourEnd.isBefore(end) ? hourEnd : end;
+      final sliceEnd = hourEnd.isBefore(to) ? hourEnd : to;
+      int sec = sliceEnd.difference(cursor).inSeconds;
 
-      // durée nette entre cursor et sliceEnd
-      final net = _effectiveBetween(cursor, sliceEnd, pauses).inMinutes;
-      if (net > 0) buckets[cursor.hour] += net;
+      for (final p in pauses) {
+        final pEnd = p.endAt ?? sliceEnd;
+        sec -= _overlapSec(cursor, sliceEnd, p.startAt, pEnd);
+      }
+      if (sec > 0) buckets[cursor.hour] += sec ~/ 60;
 
       cursor = sliceEnd;
     }
-  }
-
-  Duration _effectiveBetween(DateTime a, DateTime b, List<Pause> pauses) {
-    int sec = b.difference(a).inSeconds;
-    for (final p in pauses) {
-      final ps = p.startAt;
-      final pe = p.endAt ?? b;
-      final overlap = _overlapSec(a, b, ps, pe);
-      sec -= overlap;
-    }
-    if (sec < 0) sec = 0;
-    return Duration(seconds: sec);
   }
 
   int _overlapSec(DateTime a1, DateTime a2, DateTime b1, DateTime b2) {
@@ -118,10 +135,4 @@ class StatsService {
     final d = e.difference(s).inSeconds;
     return d > 0 ? d : 0;
   }
-}
-
-class _Daily {
-  final DateTime day;
-  final int minutes;
-  _Daily(this.day, this.minutes);
 }

@@ -1,26 +1,29 @@
-import 'package:isar/isar.dart';
+import 'package:flutter/foundation.dart';
 
-part 'session.g.dart';
-
-@collection
 class Session {
-  Id isarId = Isar.autoIncrement;
+  final String id;
+  final String activityId;
+  final DateTime startAt;
+  final DateTime? endAt;
 
-  @Index(unique: true, replace: true)
-  late String id;
-
-  @Index()
-  late String activityId;
-
-  @Index()
-  late DateTime startAt;
-
-  DateTime? endAt;
-
-  Session({
+  const Session({
     required this.id,
     required this.activityId,
     required this.startAt,
     this.endAt,
   });
+
+  Session copyWith({
+    String? id,
+    String? activityId,
+    DateTime? startAt,
+    DateTime? endAt,
+  }) {
+    return Session(
+      id: id ?? this.id,
+      activityId: activityId ?? this.activityId,
+      startAt: startAt ?? this.startAt,
+      endAt: endAt ?? this.endAt,
+    );
+  }
 }
